@@ -1,0 +1,19 @@
+{
+  "name": "Instant Listen",
+  "short_name": "Listen",
+  "description": "Remotie sender and watcher PWA for quick live presence checks.",
+  "start_url": "/go",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0f12",
+  "theme_color": "#0b0f12",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
