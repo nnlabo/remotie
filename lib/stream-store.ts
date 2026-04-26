@@ -68,7 +68,9 @@ function getTableName() {
 }
 
 function getDynamoClient() {
-  return new DynamoDBClient({});
+  return new DynamoDBClient({
+    region: process.env.REMOTIE_AWS_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION
+  });
 }
 
 function streamToItem(stream: ActiveStream): Record<string, AttributeValue> {

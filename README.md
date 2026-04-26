@@ -74,6 +74,7 @@ Recommended Amplify settings:
   - `REMOTIE_BASIC_PASSWORD=<your-password>`
 - Optional AWS-backed state:
   - `REMOTIE_STREAM_TABLE=<dynamodb-table-name>`
+  - `REMOTIE_AWS_REGION=ap-northeast-1`
 
 After deployment, test:
 
@@ -129,6 +130,7 @@ LIVEKIT_API_SECRET=
 REMOTIE_BASIC_USER=
 REMOTIE_BASIC_PASSWORD=
 REMOTIE_STREAM_TABLE=
+REMOTIE_AWS_REGION=ap-northeast-1
 ```
 
 LiveKit variables are placeholders for a later WebRTC integration. Do not commit real secrets.
