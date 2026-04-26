@@ -81,7 +81,7 @@ Recommended Amplify settings:
   - `REMOTIE_TRANSCRIPT_PROVIDER=placeholder`
   - `REMOTIE_TRANSCRIBE_REGION=ap-northeast-1`
   - `REMOTIE_TRANSCRIBE_LANGUAGE_CODE=ja-JP`
-  - `REMOTIE_SUMMARY_MODEL_ID=<bedrock-model-id>`
+  - `REMOTIE_SUMMARY_MODEL_ID=apac.amazon.nova-lite-v1:0`
 
 After deployment, test:
 
@@ -126,7 +126,7 @@ After the stack is created, set `REMOTIE_STREAM_TABLE=remotie-stream-state` in A
 }
 ```
 
-`bedrock:InvokeModel` is only required when `REMOTIE_SUMMARY_MODEL_ID` is set. For stricter production IAM, replace `"*"` with the specific foundation model ARN allowed for summaries.
+`bedrock:InvokeModel` is only required when `REMOTIE_SUMMARY_MODEL_ID` is set. The app uses the Bedrock Converse API so it can work with Amazon Nova or Anthropic Claude model/profile IDs. For stricter production IAM, replace `"*"` with the specific foundation model or inference profile ARN allowed for summaries.
 
 ### Fastest Next.js Smoke Test
 
@@ -148,7 +148,7 @@ REMOTIE_AWS_REGION=ap-northeast-1
 REMOTIE_TRANSCRIPT_PROVIDER=placeholder
 REMOTIE_TRANSCRIBE_REGION=ap-northeast-1
 REMOTIE_TRANSCRIBE_LANGUAGE_CODE=ja-JP
-REMOTIE_SUMMARY_MODEL_ID=
+REMOTIE_SUMMARY_MODEL_ID=apac.amazon.nova-lite-v1:0
 ```
 
 LiveKit variables are placeholders for a later WebRTC integration. Do not commit real secrets.

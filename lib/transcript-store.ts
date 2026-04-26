@@ -1,6 +1,6 @@
 import {
   BedrockRuntimeClient,
-  InvokeModelCommand
+  ConverseCommand
 } from "@aws-sdk/client-bedrock-runtime";
 import {
   DynamoDBClient,
@@ -163,29 +163,26 @@ async function summarizeWithBedrock(text: string) {
     text
   ].join("\n");
 
-  const body = {
-    anthropic_version: "bedrock-2023-05-31",
-    max_tokens: 700,
-    temperature: 0.2,
-    messages: [
-      {
-        role: "user",
-        content: [{ type: "text", text: prompt }]
-      }
-    ]
-  };
-
   const result = await getBedrockClient().send(
-    new InvokeModelCommand({
+    new ConverseCommand({
       modelId,
-      contentType: "application/json",
-      accept: "application/json",
-      body: JSON.stringify(body)
+      messages: [
+        {
+          role: "user",
+          content: [{ text: prompt }]
+        }
+      ],
+      inferenceConfig: {
+        maxTokens: 700,
+        temperature: 0.2
+      }
     })
   );
-  const decoded = new TextDecoder().decode(result.body);
-  const parsed = JSON.parse(decoded) as { content?: Array<{ text?: string }> };
-  return parsed.content?.map((item) => item.text).filter(Boolean).join("\n").trim() || null;
+  return result.output?.message?.content
+    ?.map((item) => item.text)
+    .filter(Boolean)
+    .join("\n")
+    .trim() || null;
 }
 
 export async function getTranscriptStatus(now = new Date()): Promise<TranscriptStatusResponse> {
