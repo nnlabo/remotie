@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioPresets, Room, Track, VideoPresets } from "livekit-client";
 import type { StreamStatusResponse } from "@/lib/stream-types";
 
@@ -47,12 +47,28 @@ function remainingMinutes(startedAt: string | undefined, autoStopMinutes: number
   return Math.max(0, Math.ceil(autoStopMinutes - elapsedMinutes));
 }
 
+function formatClock(nowMs: number) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(nowMs));
+}
+
+function formatDate(nowMs: number) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "long",
+    day: "numeric",
+    weekday: "long"
+  }).format(new Date(nowMs));
+}
+
 export default function GoPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const roomRef = useRef<Room | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationRef = useRef<number | null>(null);
+
   const [permissionState, setPermissionState] = useState<PermissionState>("checking");
   const [error, setError] = useState("");
   const [micLevel, setMicLevel] = useState(0);
@@ -63,14 +79,17 @@ export default function GoPage() {
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [liveKitState, setLiveKitState] = useState<LiveKitConnectionState>("mock");
+  const [screenHidden, setScreenHidden] = useState(false);
 
   const isLive = status?.isLive ?? false;
   const elapsed = formatElapsed(status?.stream.startedAt, nowMs);
-  const autoStopRemaining = remainingMinutes(
-    status?.stream.startedAt,
-    status?.stream.autoStopMinutes ?? 60,
-    nowMs
-  );
+  const autoStopRemaining = remainingMinutes(status?.stream.startedAt, status?.stream.autoStopMinutes ?? 60, nowMs);
+  const permissionLabel = useMemo(() => {
+    if (permissionState === "ready") return "Camera and mic ready";
+    if (permissionState === "checking") return "Checking permission";
+    if (permissionState === "required") return "Preview is stopped";
+    return "Permission error";
+  }, [permissionState]);
 
   const stopMeter = useCallback(() => {
     if (animationRef.current) {
@@ -96,22 +115,22 @@ export default function GoPage() {
   }, []);
 
   const applyTrackState = useCallback(
-    (stream: MediaStream, nextMicEnabled = micEnabled) => {
+    (stream: MediaStream, nextMicEnabled = micEnabled, nextCameraEnabled = cameraEnabled) => {
       stream.getAudioTracks().forEach((track) => {
         track.enabled = nextMicEnabled;
       });
       stream.getVideoTracks().forEach((track) => {
-        track.enabled = cameraEnabled;
+        track.enabled = nextCameraEnabled;
       });
     },
     [cameraEnabled, micEnabled]
   );
 
   const startMeter = useCallback(
-    (stream: MediaStream) => {
+    (stream: MediaStream, nextMicEnabled = micEnabled) => {
       stopMeter();
       const audioTrack = stream.getAudioTracks()[0];
-      if (!audioTrack || !micEnabled) {
+      if (!audioTrack || !nextMicEnabled) {
         setMicLevel(0);
         return;
       }
@@ -144,7 +163,7 @@ export default function GoPage() {
     async (nextFacingMode = facingMode, nextCameraEnabled = cameraEnabled) => {
       if (!navigator.mediaDevices?.getUserMedia) {
         setPermissionState("error");
-        setError("このブラウザではカメラまたはマイクを利用できません。Safari の最新版で開いてください。");
+        setError("This browser cannot access the camera or microphone. Please use Safari on a recent iOS version.");
         return null;
       }
 
@@ -153,26 +172,24 @@ export default function GoPage() {
       stopMediaTracks();
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia(
-          buildMediaConstraints(nextFacingMode, nextCameraEnabled)
-        );
+        const stream = await navigator.mediaDevices.getUserMedia(buildMediaConstraints(nextFacingMode, nextCameraEnabled));
         streamRef.current = stream;
-        applyTrackState(stream);
+        applyTrackState(stream, micEnabled, nextCameraEnabled);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => undefined);
         }
-        startMeter(stream);
+        startMeter(stream, micEnabled);
         setPermissionState("ready");
         return stream;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "不明なエラー";
+        const message = err instanceof Error ? err.message : "Unknown error";
         setPermissionState("error");
-        setError(`カメラまたはマイクにアクセスできませんでした: ${message}`);
+        setError(`Camera or microphone permission failed: ${message}`);
         return null;
       }
     },
-    [applyTrackState, cameraEnabled, facingMode, startMeter, stopMediaTracks]
+    [applyTrackState, cameraEnabled, facingMode, micEnabled, startMeter, stopMediaTracks]
   );
 
   const refreshStatus = useCallback(async () => {
@@ -228,9 +245,9 @@ export default function GoPage() {
       });
       setStatus((await response.json()) as StreamStatusResponse);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "不明なエラー";
+      const message = err instanceof Error ? err.message : "Unknown error";
       setLiveKitState("error");
-      setError(`配信を開始できませんでした: ${message}`);
+      setError(`Could not start streaming: ${message}`);
     } finally {
       setIsBusy(false);
     }
@@ -244,6 +261,7 @@ export default function GoPage() {
       stopLiveKitPublishing();
       stopMediaTracks();
       setPermissionState("required");
+      setScreenHidden(false);
     } finally {
       setIsBusy(false);
     }
@@ -264,7 +282,7 @@ export default function GoPage() {
       track.enabled = nextMicEnabled;
     });
     roomRef.current?.localParticipant.setMicrophoneEnabled(nextMicEnabled).catch(() => undefined);
-    if (nextMicEnabled) startMeter(stream);
+    if (nextMicEnabled) startMeter(stream, true);
     else stopMeter();
   }, [micEnabled, startMeter, stopMeter]);
 
@@ -306,6 +324,27 @@ export default function GoPage() {
 
   return (
     <main className="min-h-dvh bg-ink px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] text-white">
+      {screenHidden ? (
+        <button
+          type="button"
+          aria-label="Show preview"
+          onClick={() => setScreenHidden(false)}
+          className="fixed inset-0 z-50 flex min-h-dvh w-full flex-col items-center justify-center bg-black px-6 text-white"
+        >
+          <div className="absolute left-5 top-[calc(1.25rem+env(safe-area-inset-top))] flex items-center gap-2 text-sm font-semibold text-live">
+            <span className="h-2.5 w-2.5 rounded-full bg-live" />
+            LIVE {elapsed}
+          </div>
+          <div className="text-center">
+            <p className="text-7xl font-semibold tracking-normal">{formatClock(nowMs)}</p>
+            <p className="mt-4 text-base text-white/58">{formatDate(nowMs)}</p>
+          </div>
+          <p className="absolute bottom-[calc(2rem+env(safe-area-inset-bottom))] text-sm text-white/40">
+            Tap anywhere to show controls
+          </p>
+        </button>
+      ) : null}
+
       <section className="mx-auto flex min-h-[calc(100dvh-2rem-env(safe-area-inset-bottom))] max-w-md flex-col gap-4">
         <header className="flex items-center justify-between pt-2">
           <div>
@@ -324,20 +363,12 @@ export default function GoPage() {
             <div className="flex aspect-[3/4] w-full items-center justify-center bg-black">
               <div className="text-center">
                 <p className="text-lg font-semibold">Camera Off</p>
-                <p className="mt-2 text-sm text-white/54">音声のみで待機します</p>
+                <p className="mt-2 text-sm text-white/54">Audio only mode</p>
               </div>
             </div>
           )}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 to-transparent p-4">
-            <p className="text-sm font-medium text-white/82">
-              {permissionState === "ready"
-                ? "カメラ・マイク準備完了"
-                : permissionState === "checking"
-                  ? "権限を確認中"
-                  : permissionState === "required"
-                    ? "プレビューを再開してください"
-                    : "権限エラー"}
-            </p>
+            <p className="text-sm font-medium text-white/82">{permissionLabel}</p>
           </div>
         </div>
 
@@ -351,7 +382,7 @@ export default function GoPage() {
           <div className="mt-3 h-4 overflow-hidden rounded-full bg-white/10">
             <div className="h-full rounded-full bg-ready transition-[width] duration-100" style={{ width: `${micEnabled ? micLevel : 0}%` }} />
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="mt-4 grid grid-cols-4 gap-2">
             <button type="button" onClick={switchCamera} disabled={!cameraEnabled || isBusy} className="rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-45">
               <span>Camera</span>
               <span className="mt-1 block font-semibold text-white">{facingMode === "environment" ? "Back" : "Front"}</span>
@@ -364,11 +395,21 @@ export default function GoPage() {
               <span>Mic</span>
               <span className="mt-1 block font-semibold text-white">{micEnabled ? "On" : "Off"}</span>
             </button>
+            <button type="button" onClick={() => setScreenHidden(true)} disabled={!isLive} className="rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-45">
+              <span>Screen</span>
+              <span className="mt-1 block font-semibold text-white">Hide</span>
+            </button>
           </div>
           <div className="mt-3 rounded-2xl bg-white/[0.06] p-3 text-sm text-white/72">
             Auto stop <span className="font-semibold text-white">{autoStopRemaining} min</span>
             <span className="ml-3 text-white/42">
-              {liveKitState === "connected" ? "LiveKit connected" : liveKitState === "connecting" ? "LiveKit connecting" : liveKitState === "error" ? "LiveKit error" : "Mock status"}
+              {liveKitState === "connected"
+                ? "LiveKit connected"
+                : liveKitState === "connecting"
+                  ? "LiveKit connecting"
+                  : liveKitState === "error"
+                    ? "LiveKit error"
+                    : "Mock status"}
             </span>
           </div>
         </section>
@@ -387,7 +428,7 @@ export default function GoPage() {
           )}
           {permissionState !== "ready" ? (
             <button type="button" onClick={() => requestMedia()} className="rounded-full border border-white/14 px-5 py-4 text-base font-semibold text-white">
-              プレビューを再試行
+              Retry preview
             </button>
           ) : null}
         </div>

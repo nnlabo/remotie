@@ -80,7 +80,7 @@ export default function WatchPage() {
 
   const isLive = status?.isLive ?? false;
   const stateLabel = useMemo(() => {
-    if (!status) return "確認中";
+    if (!status) return "Checking";
     if (liveKitState === "connected") return "Connected";
     if (liveKitState === "connecting") return "Connecting";
     return isLive ? "Live" : "Waiting";
@@ -116,19 +116,22 @@ export default function WatchPage() {
     setRemoteTrackCount(0);
   }, []);
 
-  const resumePlayback = useCallback(async () => {
-    const elements = Array.from(mediaRef.current?.querySelectorAll<HTMLMediaElement>("video,audio") ?? []);
-    try {
-      await roomRef.current?.startAudio();
-      await Promise.all(elements.map((element) => element.play().catch(() => undefined)));
-      setAudioNeedsGesture(false);
-      setResumeNeeded(false);
-      setConnectionError("");
-    } catch (err) {
-      setResumeNeeded(true);
-      setConnectionError(err instanceof Error ? err.message : "再生を再開できませんでした");
-    }
-  }, []);
+  const resumePlayback = useCallback(
+    async (fromUserGesture = false) => {
+      const elements = Array.from(mediaRef.current?.querySelectorAll<HTMLMediaElement>("video,audio") ?? []);
+      try {
+        await roomRef.current?.startAudio();
+        await Promise.all(elements.map((element) => element.play().catch(() => undefined)));
+        setAudioNeedsGesture(false);
+        setResumeNeeded(false);
+        if (fromUserGesture) setConnectionError("");
+      } catch {
+        setResumeNeeded(true);
+        if (fromUserGesture) setConnectionError("再生を再開できませんでした。もう一度 Play を押してください。");
+      }
+    },
+    []
+  );
 
   const attachTrack = useCallback(
     (track: RemoteTrack) => {
@@ -233,7 +236,7 @@ export default function WatchPage() {
       | null;
     if (video?.webkitEnterFullscreen) {
       video.webkitEnterFullscreen();
-      window.setTimeout(() => resumePlayback().catch(() => undefined), 400);
+      window.setTimeout(() => resumePlayback(), 400);
       return;
     }
 
@@ -245,7 +248,7 @@ export default function WatchPage() {
     } else {
       await element?.webkitRequestFullscreen?.();
     }
-    window.setTimeout(() => resumePlayback().catch(() => undefined), 400);
+    window.setTimeout(() => resumePlayback(), 400);
   }, [resumePlayback]);
 
   const resetView = useCallback(() => {
@@ -258,19 +261,18 @@ export default function WatchPage() {
       pointersRef.current.set(event.pointerId, getPointerPoint(event));
 
       const points = Array.from(pointersRef.current.values());
-      if (points.length >= 2) {
-        gestureRef.current = {
-          startZoom: panZoom,
-          startDistance: distance(points[0], points[1]),
-          startMidpoint: midpoint(points[0], points[1])
-        };
-      } else {
-        gestureRef.current = {
-          startZoom: panZoom,
-          startDistance: 0,
-          startMidpoint: points[0]
-        };
-      }
+      gestureRef.current =
+        points.length >= 2
+          ? {
+              startZoom: panZoom,
+              startDistance: distance(points[0], points[1]),
+              startMidpoint: midpoint(points[0], points[1])
+            }
+          : {
+              startZoom: panZoom,
+              startDistance: 0,
+              startMidpoint: points[0]
+            };
     },
     [panZoom]
   );
@@ -315,15 +317,14 @@ export default function WatchPage() {
     (event: React.PointerEvent<HTMLDivElement>) => {
       pointersRef.current.delete(event.pointerId);
       const points = Array.from(pointersRef.current.values());
-      if (points.length === 1) {
-        gestureRef.current = {
-          startZoom: panZoom,
-          startDistance: 0,
-          startMidpoint: points[0]
-        };
-        return;
-      }
-      gestureRef.current = null;
+      gestureRef.current =
+        points.length === 1
+          ? {
+              startZoom: panZoom,
+              startDistance: 0,
+              startMidpoint: points[0]
+            }
+          : null;
     },
     [panZoom]
   );
@@ -433,7 +434,7 @@ export default function WatchPage() {
                   ) : audioNeedsGesture || resumeNeeded ? (
                     <button
                       type="button"
-                      onClick={resumePlayback}
+                      onClick={() => resumePlayback(true)}
                       className="pointer-events-auto rounded-full bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft"
                     >
                       再生を再開
@@ -469,7 +470,7 @@ export default function WatchPage() {
               <button type="button" onClick={resetView} className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82">
                 Reset
               </button>
-              <button type="button" onClick={resumePlayback} className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82">
+              <button type="button" onClick={() => resumePlayback(true)} className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82">
                 Play
               </button>
               <button type="button" onClick={requestFullscreen} className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82">
