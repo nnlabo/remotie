@@ -13,6 +13,7 @@ import {
   VideoQuality
 } from "livekit-client";
 import type { StreamStatusResponse } from "@/lib/stream-types";
+import type { TranscriptStatusResponse } from "@/lib/transcript-types";
 
 type LiveKitViewerState = "mock" | "connecting" | "connected" | "error";
 type QualityMode = "high" | "medium" | "low";
@@ -77,6 +78,9 @@ export default function WatchPage() {
   const [resumeNeeded, setResumeNeeded] = useState(false);
   const [qualityMode, setQualityMode] = useState<QualityMode>("high");
   const [panZoom, setPanZoom] = useState<PanZoom>({ scale: 1, x: 0, y: 0 });
+  const [transcript, setTranscript] = useState<TranscriptStatusResponse | null>(null);
+  const [transcriptBusy, setTranscriptBusy] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   const isLive = status?.isLive ?? false;
   const stateLabel = useMemo(() => {
@@ -255,6 +259,28 @@ export default function WatchPage() {
     setPanZoom({ scale: 1, x: 0, y: 0 });
   }, []);
 
+  const refreshTranscript = useCallback(async () => {
+    const response = await fetch("/api/transcript/status", { cache: "no-store" });
+    setTranscript((await response.json()) as TranscriptStatusResponse);
+  }, []);
+
+  const postTranscriptAction = useCallback(
+    async (action: "start" | "stop" | "summary") => {
+      setTranscriptBusy(true);
+      try {
+        const response = await fetch(`/api/transcript/${action}`, {
+          method: "POST",
+          cache: "no-store"
+        });
+        setTranscript((await response.json()) as TranscriptStatusResponse);
+        setTranscriptOpen(true);
+      } finally {
+        setTranscriptBusy(false);
+      }
+    },
+    []
+  );
+
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -345,13 +371,18 @@ export default function WatchPage() {
     };
 
     poll().catch(() => undefined);
+    refreshTranscript().catch(() => undefined);
     const interval = window.setInterval(poll, 2000);
+    const transcriptInterval = window.setInterval(() => {
+      refreshTranscript().catch(() => undefined);
+    }, 5000);
     return () => {
       isMounted = false;
       window.clearInterval(interval);
+      window.clearInterval(transcriptInterval);
       disconnectViewer();
     };
-  }, [disconnectViewer]);
+  }, [disconnectViewer, refreshTranscript]);
 
   useEffect(() => {
     if (isLive) {
@@ -477,6 +508,64 @@ export default function WatchPage() {
                 Full
               </button>
             </div>
+
+            <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+              <button
+                type="button"
+                onClick={() => postTranscriptAction(transcript?.transcript.status === "listening" ? "stop" : "start")}
+                disabled={transcriptBusy || !isLive}
+                className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82 disabled:opacity-45"
+              >
+                {transcript?.transcript.status === "listening" ? "Stop Text" : "Transcript"}
+              </button>
+              <button
+                type="button"
+                onClick={() => postTranscriptAction("summary")}
+                disabled={transcriptBusy}
+                className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82 disabled:opacity-45"
+              >
+                Summary
+              </button>
+              <button
+                type="button"
+                onClick={() => setTranscriptOpen((open) => !open)}
+                className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82"
+              >
+                {transcriptOpen ? "Hide Text" : "Show Text"}
+              </button>
+            </div>
+
+            {transcriptOpen ? (
+              <section className="mt-4 rounded-2xl bg-white/[0.06] p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">Transcript</p>
+                    <p className="mt-1 text-xs text-white/48">
+                      {transcript?.transcript.status === "listening"
+                        ? "Listening requested"
+                        : transcript?.transcript.status === "summarized"
+                          ? "Summary ready"
+                          : "Idle"}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/68">
+                    {transcript?.transcript.provider ?? "placeholder"}
+                  </span>
+                </div>
+                <div className="mt-4 max-h-44 overflow-auto rounded-2xl bg-black/24 p-3 leading-6 text-white/72">
+                  {transcript?.transcript.entries.length ? (
+                    transcript.transcript.entries.map((entry) => <p key={entry.id}>{entry.text}</p>)
+                  ) : (
+                    <p>AWS Transcribe 接続後、ここに必要時だけ文字起こしを表示します。現時点では録音も保存もしていません。</p>
+                  )}
+                </div>
+                {transcript?.transcript.summary ? (
+                  <div className="mt-3 rounded-2xl border border-ready/25 bg-ready/10 p-3 leading-6 text-white">
+                    {transcript.transcript.summary}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             {connectionError ? (
               <div className="mt-4 rounded-2xl border border-live/40 bg-live/10 p-3 text-sm text-white">{connectionError}</div>
