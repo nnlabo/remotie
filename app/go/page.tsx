@@ -533,7 +533,12 @@ export default function GoPage() {
                     : "Mock status"}
             </span>
           </div>
-          <div className="mt-2 rounded-2xl bg-white/[0.06] p-3 text-sm text-white/72">
+          <button
+            type="button"
+            onClick={startBrowserSpeech}
+            disabled={!isLive || !micEnabled || transcriptStatus?.transcript.status !== "listening" || speechState === "unsupported"}
+            className="mt-2 w-full rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-70"
+          >
             Text <span className="font-semibold text-white">{transcriptStatus?.transcript.status ?? "idle"}</span>
             <span className="ml-3 text-white/42">
               {speechState === "listening"
@@ -541,10 +546,10 @@ export default function GoPage() {
                 : speechState === "unsupported"
                   ? "Browser speech unsupported"
                   : speechState === "error"
-                    ? "Speech needs sender tap"
+                    ? "Tap here to retry"
                     : "Standby"}
             </span>
-          </div>
+          </button>
         </section>
 
         {error ? <section className="rounded-3xl border border-live/40 bg-live/10 p-4 text-sm leading-6 text-white">{error}</section> : null}
