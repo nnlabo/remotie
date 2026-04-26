@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioPresets, Room, Track, VideoPresets } from "livekit-client";
 import type { StreamStatusResponse } from "@/lib/stream-types";
+import type { TranscriptStatusResponse } from "@/lib/transcript-types";
 
 type PermissionState = "checking" | "ready" | "required" | "error";
 type FacingMode = "environment" | "user";
@@ -11,6 +12,38 @@ type LiveKitConnectionState = "mock" | "connecting" | "connected" | "error";
 type LiveKitTokenResponse =
   | { enabled: false }
   | { enabled: true; token: string; url: string; roomName: string };
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionEvent = {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: {
+      isFinal: boolean;
+      [index: number]: {
+        transcript: string;
+      };
+    };
+  };
+};
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => BrowserSpeechRecognition;
+    webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+  }
+}
 
 const audioConstraints: MediaTrackConstraints = {
   echoCancellation: true,
@@ -68,6 +101,8 @@ export default function GoPage() {
   const roomRef = useRef<Room | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationRef = useRef<number | null>(null);
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const transcriptListeningRef = useRef(false);
 
   const [permissionState, setPermissionState] = useState<PermissionState>("checking");
   const [error, setError] = useState("");
@@ -80,6 +115,8 @@ export default function GoPage() {
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [liveKitState, setLiveKitState] = useState<LiveKitConnectionState>("mock");
   const [screenHidden, setScreenHidden] = useState(false);
+  const [transcriptStatus, setTranscriptStatus] = useState<TranscriptStatusResponse | null>(null);
+  const [speechState, setSpeechState] = useState<"idle" | "listening" | "unsupported" | "error">("idle");
 
   const isLive = status?.isLive ?? false;
   const elapsed = formatElapsed(status?.stream.startedAt, nowMs);
@@ -113,6 +150,66 @@ export default function GoPage() {
     roomRef.current = null;
     setLiveKitState("mock");
   }, []);
+
+  const appendTranscript = useCallback(async (text: string) => {
+    await fetch("/api/transcript/append", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    });
+  }, []);
+
+  const stopBrowserSpeech = useCallback(() => {
+    transcriptListeningRef.current = false;
+    speechRecognitionRef.current?.stop();
+    speechRecognitionRef.current = null;
+    setSpeechState((current) => (current === "unsupported" ? current : "idle"));
+  }, []);
+
+  const startBrowserSpeech = useCallback(() => {
+    if (speechRecognitionRef.current || !micEnabled || !isLive) return;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechState("unsupported");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "ja-JP";
+    recognition.onresult = (event) => {
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (result.isFinal) {
+          const text = result[0]?.transcript.trim();
+          if (text) appendTranscript(text).catch(() => undefined);
+        }
+      }
+    };
+    recognition.onerror = () => {
+      setSpeechState("error");
+    };
+    recognition.onend = () => {
+      speechRecognitionRef.current = null;
+      if (transcriptListeningRef.current && micEnabled && isLive) {
+        window.setTimeout(() => startBrowserSpeech(), 500);
+      } else {
+        setSpeechState((current) => (current === "unsupported" ? current : "idle"));
+      }
+    };
+
+    try {
+      transcriptListeningRef.current = true;
+      speechRecognitionRef.current = recognition;
+      recognition.start();
+      setSpeechState("listening");
+    } catch {
+      speechRecognitionRef.current = null;
+      setSpeechState("error");
+    }
+  }, [appendTranscript, isLive, micEnabled]);
 
   const applyTrackState = useCallback(
     (stream: MediaStream, nextMicEnabled = micEnabled, nextCameraEnabled = cameraEnabled) => {
@@ -259,13 +356,14 @@ export default function GoPage() {
       const response = await fetch("/api/stream/stop", { method: "POST" });
       setStatus((await response.json()) as StreamStatusResponse);
       stopLiveKitPublishing();
+      stopBrowserSpeech();
       stopMediaTracks();
       setPermissionState("required");
       setScreenHidden(false);
     } finally {
       setIsBusy(false);
     }
-  }, [stopLiveKitPublishing, stopMediaTracks]);
+  }, [stopBrowserSpeech, stopLiveKitPublishing, stopMediaTracks]);
 
   const switchCamera = useCallback(async () => {
     const nextFacingMode = facingMode === "environment" ? "user" : "environment";
@@ -307,10 +405,33 @@ export default function GoPage() {
     const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => {
       window.clearInterval(interval);
+      stopBrowserSpeech();
       stopMediaTracks();
       stopLiveKitPublishing();
     };
-  }, [refreshStatus, requestMedia, stopLiveKitPublishing, stopMediaTracks]);
+  }, [refreshStatus, requestMedia, stopBrowserSpeech, stopLiveKitPublishing, stopMediaTracks]);
+
+  useEffect(() => {
+    const pollTranscript = async () => {
+      try {
+        const response = await fetch("/api/transcript/status", { cache: "no-store" });
+        const data = (await response.json()) as TranscriptStatusResponse;
+        setTranscriptStatus(data);
+        if (data.transcript.status === "listening" && isLive && micEnabled) {
+          transcriptListeningRef.current = true;
+          startBrowserSpeech();
+          return;
+        }
+        stopBrowserSpeech();
+      } catch {
+        // Keep streaming even if transcript status polling fails.
+      }
+    };
+
+    pollTranscript().catch(() => undefined);
+    const interval = window.setInterval(pollTranscript, 3000);
+    return () => window.clearInterval(interval);
+  }, [isLive, micEnabled, startBrowserSpeech, stopBrowserSpeech]);
 
   useEffect(() => {
     const stream = streamRef.current;
@@ -410,6 +531,18 @@ export default function GoPage() {
                   : liveKitState === "error"
                     ? "LiveKit error"
                     : "Mock status"}
+            </span>
+          </div>
+          <div className="mt-2 rounded-2xl bg-white/[0.06] p-3 text-sm text-white/72">
+            Text <span className="font-semibold text-white">{transcriptStatus?.transcript.status ?? "idle"}</span>
+            <span className="ml-3 text-white/42">
+              {speechState === "listening"
+                ? "Browser speech active"
+                : speechState === "unsupported"
+                  ? "Browser speech unsupported"
+                  : speechState === "error"
+                    ? "Speech needs sender tap"
+                    : "Standby"}
             </span>
           </div>
         </section>

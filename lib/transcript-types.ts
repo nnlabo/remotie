@@ -1,6 +1,6 @@
 export type TranscriptStatus = "idle" | "listening" | "summarized";
 
-export type TranscriptProvider = "placeholder" | "aws_transcribe";
+export type TranscriptProvider = "placeholder" | "browser_speech" | "aws_transcribe";
 
 export type TranscriptEntry = {
   id: string;

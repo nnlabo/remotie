@@ -164,6 +164,7 @@ The viewer has a scaffold for opt-in transcription:
 - `Transcript` requests transcription only while the user wants it.
 - `Stop Text` stops the transcript session state.
 - `Summary` is disabled until `REMOTIE_SUMMARY_MODEL_ID` is configured.
+- `/go` currently includes a no-recording browser speech bridge. When supported by the sender browser, it sends final text snippets to `/api/transcript/append`.
 - Transcript state is stored in the same DynamoDB table as `pk=transcript` when `REMOTIE_STREAM_TABLE` is set.
 - The app does not record audio or persist media files.
 
@@ -175,7 +176,9 @@ Current API boundaries:
 - `POST /api/transcript/summary`
 - `GET /api/transcript/status`
 
-`/api/transcript/append` is the boundary intended for a future AWS Transcribe Streaming worker. The worker should only run after the user explicitly presses `Transcript`.
+`/api/transcript/append` is also the boundary intended for a future AWS Transcribe Streaming worker. The worker should only run after the user explicitly presses `Transcript`.
+
+The browser speech bridge is intentionally a temporary bridge: it keeps the no-recording behavior and lets the transcript/summary UI be tested early, but browser support and permission behavior vary on iOS. For production AWS transcription, replace this bridge with an AWS Transcribe Streaming path that does not store audio.
 
 ## LiveKit Setup
 
