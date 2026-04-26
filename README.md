@@ -89,6 +89,30 @@ For AWS-backed state, create a DynamoDB table with:
 
 Then set `REMOTIE_STREAM_TABLE` to that table name and make sure the Amplify compute role can call `dynamodb:GetItem` and `dynamodb:PutItem` on the table.
 
+You can create the table from the included CloudFormation template:
+
+```bash
+aws cloudformation deploy \
+  --stack-name remotie-state \
+  --template-file infra/remotie-state.yaml \
+  --parameter-overrides TableName=remotie-stream-state
+```
+
+After the stack is created, set `REMOTIE_STREAM_TABLE=remotie-stream-state` in Amplify and attach this IAM policy to the Amplify compute role, replacing the table ARN:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
+      "Resource": "<StreamStateTableArn>"
+    }
+  ]
+}
+```
+
 ### Fastest Next.js Smoke Test
 
 Vercel is also a good quick smoke-test target for a Next.js app because it auto-detects the framework from GitHub. The same in-memory state caveat applies there too.
