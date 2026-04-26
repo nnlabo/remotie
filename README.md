@@ -209,6 +209,15 @@ Room name is currently fixed to `remotie-main` for the MVP.
 
 Camera and microphone access require HTTPS in most deployed environments. `localhost` is treated specially by browsers, but a phone testing against another machine usually needs HTTPS or a trusted tunnel.
 
+### Home Screen Icons
+
+`/go` and `/watch` have separate manifests and Apple touch icons:
+
+- `/go` uses `Remotie Go` with a red sender icon.
+- `/watch` uses `Remotie Watch` with a green viewer icon.
+
+On iPhone, open each route directly in Safari and use Share -> Add to Home Screen. iOS uses `apple-touch-icon` and manifest metadata for this flow; it is not only the browser favicon.
+
 ## iOS Limitations
 
 - iOS may require a user gesture before camera or microphone starts.

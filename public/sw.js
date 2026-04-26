@@ -1,5 +1,21 @@
-const CACHE_NAME = "remotie-shell-v1";
-const SHELL = ["/", "/go", "/watch", "/manifest.webmanifest", "/icons/icon.svg"];
+const CACHE_NAME = "remotie-shell-v2";
+const SHELL = [
+  "/",
+  "/go",
+  "/watch",
+  "/manifest.webmanifest",
+  "/go.webmanifest",
+  "/watch.webmanifest",
+  "/icons/icon.svg",
+  "/icons/go.svg",
+  "/icons/watch.svg",
+  "/icons/go-180.png",
+  "/icons/go-192.png",
+  "/icons/go-512.png",
+  "/icons/watch-180.png",
+  "/icons/watch-192.png",
+  "/icons/watch-512.png"
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

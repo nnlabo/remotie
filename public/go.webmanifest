@@ -1,0 +1,31 @@
+{
+  "name": "Remotie Go",
+  "short_name": "Go",
+  "description": "Sender app for starting a Remotie live presence stream.",
+  "start_url": "/go",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0f12",
+  "theme_color": "#ff3b30",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/go-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/go-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/go.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

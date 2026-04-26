@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Remotie Go">
+  <rect width="512" height="512" rx="112" fill="#0b0f12"/>
+  <circle cx="256" cy="256" r="164" fill="#171d22" stroke="#2b333b" stroke-width="18"/>
+  <circle cx="256" cy="256" r="84" fill="#ff3b30"/>
+  <circle cx="256" cy="256" r="36" fill="#ffffff"/>
+  <path d="M166 176l70-42v84l-70-42z" fill="#ffffff"/>
+  <path d="M326 176h54a34 34 0 0134 34v92a34 34 0 01-34 34h-54z" fill="#ff3b30"/>
+  <path d="M132 382h248" stroke="#20c997" stroke-width="28" stroke-linecap="round"/>
+</svg>
