@@ -1,10 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Room, Track } from "livekit-client";
 import type { StreamStatusResponse } from "@/lib/stream-types";
 
 type PermissionState = "checking" | "ready" | "required" | "error";
 type FacingMode = "environment" | "user";
+type LiveKitConnectionState = "mock" | "connecting" | "connected" | "error";
+
+type LiveKitTokenResponse =
+  | { enabled: false }
+  | { enabled: true; token: string; url: string; roomName: string };
 
 const audioConstraints: MediaTrackConstraints = {
   echoCancellation: true,
@@ -44,6 +50,7 @@ function remainingMinutes(startedAt: string | undefined, autoStopMinutes: number
 export default function GoPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const roomRef = useRef<Room | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationRef = useRef<number | null>(null);
   const [permissionState, setPermissionState] = useState<PermissionState>("checking");
@@ -55,6 +62,7 @@ export default function GoPage() {
   const [facingMode, setFacingMode] = useState<FacingMode>("environment");
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [liveKitState, setLiveKitState] = useState<LiveKitConnectionState>("mock");
 
   const isLive = status?.isLive ?? false;
   const elapsed = formatElapsed(status?.stream.startedAt, nowMs);
@@ -83,6 +91,12 @@ export default function GoPage() {
       videoRef.current.srcObject = null;
     }
   }, [stopMeter]);
+
+  const stopLiveKitPublishing = useCallback(() => {
+    roomRef.current?.disconnect();
+    roomRef.current = null;
+    setLiveKitState("mock");
+  }, []);
 
   const applyTrackState = useCallback((stream: MediaStream, nextMicEnabled = micEnabled) => {
     stream.getAudioTracks().forEach((track) => {
@@ -172,28 +186,66 @@ export default function GoPage() {
     try {
       const stream = streamRef.current ?? (await requestMedia());
       if (!stream) return;
+
+      const tokenResponse = (await fetch("/api/token/sender", { cache: "no-store" }).then((response) =>
+        response.json()
+      )) as LiveKitTokenResponse;
+
+      if (tokenResponse.enabled) {
+        setLiveKitState("connecting");
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true
+        });
+        roomRef.current = room;
+        await room.connect(tokenResponse.url, tokenResponse.token);
+
+        const audioTrack = stream.getAudioTracks()[0];
+        const videoTrack = stream.getVideoTracks()[0];
+        if (audioTrack && micEnabled) {
+          await room.localParticipant.publishTrack(audioTrack, {
+            source: Track.Source.Microphone,
+            name: "remotie-microphone"
+          });
+        }
+        if (videoTrack && cameraEnabled) {
+          await room.localParticipant.publishTrack(videoTrack, {
+            source: Track.Source.Camera,
+            name: "remotie-camera"
+          });
+        }
+        setLiveKitState("connected");
+      } else {
+        setLiveKitState("mock");
+      }
+
       const response = await fetch("/api/stream/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: cameraEnabled ? "audio_video" : "audio_only" })
       });
       setStatus((await response.json()) as StreamStatusResponse);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "不明なエラー";
+      setLiveKitState("error");
+      setError(`配信を開始できませんでした: ${message}`);
     } finally {
       setIsBusy(false);
     }
-  }, [cameraEnabled, requestMedia]);
+  }, [cameraEnabled, micEnabled, requestMedia]);
 
   const stopStream = useCallback(async () => {
     setIsBusy(true);
     try {
       const response = await fetch("/api/stream/stop", { method: "POST" });
       setStatus((await response.json()) as StreamStatusResponse);
+      stopLiveKitPublishing();
       stopMediaTracks();
       setPermissionState("required");
     } finally {
       setIsBusy(false);
     }
-  }, [stopMediaTracks]);
+  }, [stopLiveKitPublishing, stopMediaTracks]);
 
   const switchCamera = useCallback(async () => {
     const nextFacingMode = facingMode === "environment" ? "user" : "environment";
@@ -211,6 +263,7 @@ export default function GoPage() {
     stream.getAudioTracks().forEach((track) => {
       track.enabled = nextMicEnabled;
     });
+    roomRef.current?.localParticipant.setMicrophoneEnabled(nextMicEnabled).catch(() => undefined);
     if (nextMicEnabled) {
       startMeter(stream);
     } else {
@@ -221,6 +274,7 @@ export default function GoPage() {
   const toggleCamera = useCallback(async () => {
     const nextCameraEnabled = !cameraEnabled;
     setCameraEnabled(nextCameraEnabled);
+    roomRef.current?.localParticipant.setCameraEnabled(nextCameraEnabled).catch(() => undefined);
     if (nextCameraEnabled) {
       await requestMedia(facingMode, true);
       return;
@@ -242,8 +296,9 @@ export default function GoPage() {
     return () => {
       window.clearInterval(interval);
       stopMediaTracks();
+      stopLiveKitPublishing();
     };
-  }, [refreshStatus, requestMedia, stopMediaTracks]);
+  }, [refreshStatus, requestMedia, stopLiveKitPublishing, stopMediaTracks]);
 
   useEffect(() => {
     const stream = streamRef.current;
@@ -349,6 +404,15 @@ export default function GoPage() {
           </div>
           <div className="mt-3 rounded-2xl bg-white/[0.06] p-3 text-sm text-white/72">
             Auto stop <span className="font-semibold text-white">{autoStopRemaining} min</span>
+            <span className="ml-3 text-white/42">
+              {liveKitState === "connected"
+                ? "LiveKit connected"
+                : liveKitState === "connecting"
+                  ? "LiveKit connecting"
+                  : liveKitState === "error"
+                    ? "LiveKit error"
+                    : "Mock status"}
+            </span>
           </div>
         </section>
 

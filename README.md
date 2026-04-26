@@ -17,7 +17,9 @@ This first implementation intentionally does **not** include WebRTC, recording, 
 - API routes:
   - `POST /api/stream/start`
   - `POST /api/stream/stop`
-  - `GET /api/stream/status`
+- `GET /api/stream/status`
+- `GET /api/token/sender`
+- `GET /api/token/viewer`
 - Auto-stop after 60 minutes
 - No recording
 - No public share flow
@@ -138,6 +140,23 @@ LiveKit variables are placeholders for a later WebRTC integration. Do not commit
 `REMOTIE_BASIC_USER` and `REMOTIE_BASIC_PASSWORD` enable a simple HTTP Basic Auth gate when both are set. Leave them empty for local development.
 
 `GET /api/system/status` reports whether Basic Auth and the stream store are configured without exposing secret values. If Basic Auth is active, this endpoint should also require authentication.
+
+## LiveKit Setup
+
+The app runs in mock status mode until all LiveKit variables are configured:
+
+- `NEXT_PUBLIC_LIVEKIT_URL`
+- `LIVEKIT_API_KEY`
+- `LIVEKIT_API_SECRET`
+
+When configured:
+
+- `/api/token/sender` issues a short-lived publisher token
+- `/api/token/viewer` issues a short-lived viewer token
+- `/go` connects to LiveKit and publishes camera/microphone tracks after Start
+- `/watch` connects when stream status is live and attaches subscribed remote tracks
+
+Room name is currently fixed to `remotie-main` for the MVP.
 
 ## Testing on iPhone
 

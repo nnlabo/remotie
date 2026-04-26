@@ -1,7 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  RemoteAudioTrack,
+  RemoteParticipant,
+  RemoteTrack,
+  RemoteTrackPublication,
+  RemoteVideoTrack,
+  Room,
+  RoomEvent
+} from "livekit-client";
 import type { StreamStatusResponse } from "@/lib/stream-types";
+
+type LiveKitViewerState = "mock" | "connecting" | "connected" | "error";
+
+type LiveKitTokenResponse =
+  | { enabled: false }
+  | { enabled: true; token: string; url: string; roomName: string };
 
 function formatTime(iso?: string) {
   if (!iso) return "--:--";
@@ -13,13 +28,111 @@ function formatTime(iso?: string) {
 }
 
 export default function WatchPage() {
+  const mediaRef = useRef<HTMLDivElement | null>(null);
+  const roomRef = useRef<Room | null>(null);
   const [status, setStatus] = useState<StreamStatusResponse | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [liveKitState, setLiveKitState] = useState<LiveKitViewerState>("mock");
+  const [connectionError, setConnectionError] = useState("");
+  const [remoteTrackCount, setRemoteTrackCount] = useState(0);
   const isLive = status?.isLive ?? false;
   const stateLabel = useMemo(() => {
     if (!status) return "確認中";
-    return isLive ? "Connected" : "Waiting";
-  }, [isLive, status]);
+    if (liveKitState === "connected") return "Connected";
+    return isLive ? "Live" : "Waiting";
+  }, [isLive, liveKitState, status]);
+
+  const clearMedia = useCallback(() => {
+    if (!mediaRef.current) return;
+    mediaRef.current.replaceChildren();
+    setRemoteTrackCount(0);
+  }, []);
+
+  const attachTrack = useCallback((track: RemoteTrack) => {
+    if (!(track instanceof RemoteVideoTrack || track instanceof RemoteAudioTrack)) {
+      return;
+    }
+
+    const element = track.attach();
+    element.autoplay = true;
+    if (element instanceof HTMLVideoElement) {
+      element.playsInline = true;
+    }
+    element.className =
+      track instanceof RemoteVideoTrack
+        ? "h-full w-full rounded-3xl object-cover"
+        : "hidden";
+    mediaRef.current?.appendChild(element);
+    setRemoteTrackCount((count) => count + 1);
+  }, []);
+
+  const detachTrack = useCallback((track: RemoteTrack) => {
+    if (!(track instanceof RemoteVideoTrack || track instanceof RemoteAudioTrack)) {
+      return;
+    }
+    track.detach().forEach((element) => element.remove());
+    setRemoteTrackCount((count) => Math.max(0, count - 1));
+  }, []);
+
+  const connectViewer = useCallback(async () => {
+    if (roomRef.current || liveKitState === "connecting") return;
+
+    const tokenResponse = (await fetch("/api/token/viewer", { cache: "no-store" }).then((response) =>
+      response.json()
+    )) as LiveKitTokenResponse;
+
+    if (!tokenResponse.enabled) {
+      setLiveKitState("mock");
+      return;
+    }
+
+    setConnectionError("");
+    setLiveKitState("connecting");
+    const room = new Room({
+      adaptiveStream: true
+    });
+    roomRef.current = room;
+
+    room
+      .on(
+        RoomEvent.TrackSubscribed,
+        (
+          track: RemoteTrack,
+          _publication: RemoteTrackPublication,
+          _participant: RemoteParticipant
+        ) => attachTrack(track)
+      )
+      .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => detachTrack(track))
+      .on(RoomEvent.Disconnected, () => {
+        roomRef.current = null;
+        setLiveKitState("mock");
+        clearMedia();
+      });
+
+    try {
+      await room.connect(tokenResponse.url, tokenResponse.token);
+      room.remoteParticipants.forEach((participant) => {
+        participant.trackPublications.forEach((publication) => {
+          if (publication.track) {
+            attachTrack(publication.track);
+          }
+        });
+      });
+      setLiveKitState("connected");
+    } catch (err) {
+      room.disconnect();
+      roomRef.current = null;
+      setLiveKitState("error");
+      setConnectionError(err instanceof Error ? err.message : "接続できませんでした");
+    }
+  }, [attachTrack, clearMedia, detachTrack, liveKitState]);
+
+  const disconnectViewer = useCallback(() => {
+    roomRef.current?.disconnect();
+    roomRef.current = null;
+    clearMedia();
+    setLiveKitState("mock");
+  }, [clearMedia]);
 
   useEffect(() => {
     let isMounted = true;
@@ -45,8 +158,21 @@ export default function WatchPage() {
     return () => {
       isMounted = false;
       window.clearInterval(interval);
+      disconnectViewer();
     };
-  }, []);
+  }, [disconnectViewer]);
+
+  useEffect(() => {
+    if (isLive) {
+      connectViewer().catch((err) => {
+        setLiveKitState("error");
+        setConnectionError(err instanceof Error ? err.message : "接続できませんでした");
+      });
+      return;
+    }
+
+    disconnectViewer();
+  }, [connectViewer, disconnectViewer, isLive]);
 
   return (
     <main className="min-h-dvh bg-ink px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] text-white">
@@ -67,20 +193,24 @@ export default function WatchPage() {
 
         <section className="flex flex-1 flex-col justify-center py-8">
           <div className="rounded-[2rem] border border-white/10 bg-panel p-5 shadow-soft">
-            <div className="aspect-video rounded-3xl border border-white/10 bg-black p-5">
+            <div
+              ref={mediaRef}
+              className="flex aspect-video items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-black p-5"
+            >
               {isLive ? (
-                <div className="flex h-full flex-col justify-between">
-                  <div className="flex items-center gap-2 text-live">
-                    <span className="h-3 w-3 rounded-full bg-live" />
-                    <span className="text-sm font-bold">Connected</span>
-                  </div>
+                remoteTrackCount === 0 ? (
                   <div>
-                    <p className="text-3xl font-semibold">Live stream active</p>
-                    <p className="mt-3 text-sm leading-6 text-white/62">
-                      このMVPではWebRTC映像は未接続です。送信側のライブ状態だけを確認しています。
+                    <div className="flex items-center gap-2 text-live">
+                      <span className="h-3 w-3 rounded-full bg-live" />
+                      <span className="text-sm font-bold">
+                        {liveKitState === "connecting" ? "Connecting" : "Live stream active"}
+                      </span>
+                    </div>
+                    <p className="mt-5 text-sm leading-6 text-white/62">
+                      LiveKit が未設定、または映像トラックを待機中です。
                     </p>
                   </div>
-                </div>
+                ) : null
               ) : (
                 <div className="flex h-full flex-col justify-center">
                   <p className="text-3xl font-semibold">Waiting for stream...</p>
@@ -90,6 +220,12 @@ export default function WatchPage() {
                 </div>
               )}
             </div>
+
+            {connectionError ? (
+              <div className="mt-4 rounded-2xl border border-live/40 bg-live/10 p-3 text-sm text-white">
+                {connectionError}
+              </div>
+            ) : null}
 
             <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-2xl bg-white/[0.06] p-4">

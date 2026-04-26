@@ -12,6 +12,7 @@ export function getRuntimeConfig() {
       process.env.NEXT_PUBLIC_LIVEKIT_URL &&
         process.env.LIVEKIT_API_KEY &&
         process.env.LIVEKIT_API_SECRET
-    )
+    ),
+    liveKitUrlConfigured: Boolean(process.env.NEXT_PUBLIC_LIVEKIT_URL)
   };
 }
