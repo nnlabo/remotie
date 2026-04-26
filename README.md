@@ -52,6 +52,35 @@ For production build:
 npm run build
 ```
 
+## Internet Testing
+
+For iPhone testing, deploy to an HTTPS URL. Camera and microphone permissions are much easier to validate on a real public HTTPS origin than on a local network address.
+
+### AWS Amplify Hosting
+
+This repository includes `amplify.yml` for Amplify Hosting.
+
+Recommended Amplify settings:
+
+- Repository: `nnlabo/remotie`
+- Branch: `main`
+- Framework preset: Next.js
+- Build command: `npm run build`
+- Install command: `npm ci`
+- Output/artifact directory: `.next`
+- Environment variable: `NEXT_PUBLIC_APP_BASE_URL=https://<your-amplify-domain>`
+
+After deployment, test:
+
+- Sender: `https://<your-amplify-domain>/go`
+- Viewer: `https://<your-amplify-domain>/watch`
+
+Important: the current MVP stores stream state in memory. On serverless or multi-instance hosting, `/go` and `/watch` may not always share the same process. If status switching is inconsistent after deployment, replace `lib/stream-store.ts` with a durable shared store before deeper testing.
+
+### Fastest Next.js Smoke Test
+
+Vercel is also a good quick smoke-test target for a Next.js app because it auto-detects the framework from GitHub. The same in-memory state caveat applies there too.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env.local` when needed.
