@@ -8,15 +8,25 @@ import {
   RemoteTrackPublication,
   RemoteVideoTrack,
   Room,
-  RoomEvent
+  RoomEvent,
+  Track,
+  VideoQuality
 } from "livekit-client";
 import type { StreamStatusResponse } from "@/lib/stream-types";
 
 type LiveKitViewerState = "mock" | "connecting" | "connected" | "error";
+type QualityMode = "high" | "medium" | "low";
+type ZoomMode = 1 | 1.5 | 2;
 
 type LiveKitTokenResponse =
   | { enabled: false }
   | { enabled: true; token: string; url: string; roomName: string };
+
+const qualityMap: Record<QualityMode, VideoQuality> = {
+  high: VideoQuality.HIGH,
+  medium: VideoQuality.MEDIUM,
+  low: VideoQuality.LOW
+};
 
 function formatTime(iso?: string) {
   if (!iso) return "--:--";
@@ -28,6 +38,7 @@ function formatTime(iso?: string) {
 }
 
 export default function WatchPage() {
+  const playerRef = useRef<HTMLDivElement | null>(null);
   const mediaRef = useRef<HTMLDivElement | null>(null);
   const roomRef = useRef<Room | null>(null);
   const [status, setStatus] = useState<StreamStatusResponse | null>(null);
@@ -36,12 +47,24 @@ export default function WatchPage() {
   const [connectionError, setConnectionError] = useState("");
   const [remoteTrackCount, setRemoteTrackCount] = useState(0);
   const [audioNeedsGesture, setAudioNeedsGesture] = useState(false);
+  const [qualityMode, setQualityMode] = useState<QualityMode>("high");
+  const [zoomMode, setZoomMode] = useState<ZoomMode>(1);
   const isLive = status?.isLive ?? false;
   const stateLabel = useMemo(() => {
     if (!status) return "確認中";
     if (liveKitState === "connected") return "Connected";
     return isLive ? "Live" : "Waiting";
   }, [isLive, liveKitState, status]);
+
+  const applyVideoQuality = useCallback((room: Room, mode: QualityMode) => {
+    room.remoteParticipants.forEach((participant) => {
+      participant.trackPublications.forEach((publication) => {
+        if (publication.kind === Track.Kind.Video) {
+          publication.setVideoQuality(qualityMap[mode]);
+        }
+      });
+    });
+  }, []);
 
   const clearMedia = useCallback(() => {
     if (!mediaRef.current) return;
@@ -50,27 +73,21 @@ export default function WatchPage() {
   }, []);
 
   const attachTrack = useCallback((track: RemoteTrack) => {
-    if (!(track instanceof RemoteVideoTrack || track instanceof RemoteAudioTrack)) {
-      return;
-    }
+    if (!(track instanceof RemoteVideoTrack || track instanceof RemoteAudioTrack)) return;
 
     const element = track.attach();
     element.autoplay = true;
     if (element instanceof HTMLVideoElement) {
       element.playsInline = true;
+      element.controls = false;
     }
-    element.className =
-      track instanceof RemoteVideoTrack
-        ? "h-full w-full rounded-3xl object-cover"
-        : "hidden";
+    element.className = track instanceof RemoteVideoTrack ? "h-full w-full object-cover" : "hidden";
     mediaRef.current?.appendChild(element);
     setRemoteTrackCount((count) => count + 1);
   }, []);
 
   const detachTrack = useCallback((track: RemoteTrack) => {
-    if (!(track instanceof RemoteVideoTrack || track instanceof RemoteAudioTrack)) {
-      return;
-    }
+    if (!(track instanceof RemoteVideoTrack || track instanceof RemoteAudioTrack)) return;
     track.detach().forEach((element) => element.remove());
     setRemoteTrackCount((count) => Math.max(0, count - 1));
   }, []);
@@ -89,19 +106,18 @@ export default function WatchPage() {
 
     setConnectionError("");
     setLiveKitState("connecting");
-    const room = new Room({
-      adaptiveStream: true
-    });
+    const room = new Room({ adaptiveStream: false });
     roomRef.current = room;
 
     room
       .on(
         RoomEvent.TrackSubscribed,
-        (
-          track: RemoteTrack,
-          _publication: RemoteTrackPublication,
-          _participant: RemoteParticipant
-        ) => attachTrack(track)
+        (track: RemoteTrack, publication: RemoteTrackPublication, _participant: RemoteParticipant) => {
+          if (publication.kind === Track.Kind.Video) {
+            publication.setVideoQuality(qualityMap[qualityMode]);
+          }
+          attachTrack(track);
+        }
       )
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => detachTrack(track))
       .on(RoomEvent.Disconnected, () => {
@@ -116,11 +132,10 @@ export default function WatchPage() {
     try {
       await room.connect(tokenResponse.url, tokenResponse.token);
       setAudioNeedsGesture(!room.canPlaybackAudio);
+      applyVideoQuality(room, qualityMode);
       room.remoteParticipants.forEach((participant) => {
         participant.trackPublications.forEach((publication) => {
-          if (publication.track) {
-            attachTrack(publication.track);
-          }
+          if (publication.track) attachTrack(publication.track);
         });
       });
       setLiveKitState("connected");
@@ -130,7 +145,7 @@ export default function WatchPage() {
       setLiveKitState("error");
       setConnectionError(err instanceof Error ? err.message : "接続できませんでした");
     }
-  }, [attachTrack, clearMedia, detachTrack, liveKitState]);
+  }, [applyVideoQuality, attachTrack, clearMedia, detachTrack, liveKitState, qualityMode]);
 
   const disconnectViewer = useCallback(() => {
     roomRef.current?.disconnect();
@@ -149,6 +164,34 @@ export default function WatchPage() {
     }
   }, []);
 
+  const changeQuality = useCallback(
+    (mode: QualityMode) => {
+      setQualityMode(mode);
+      const room = roomRef.current;
+      if (room) applyVideoQuality(room, mode);
+    },
+    [applyVideoQuality]
+  );
+
+  const requestFullscreen = useCallback(async () => {
+    const video = mediaRef.current?.querySelector("video") as
+      | (HTMLVideoElement & { webkitEnterFullscreen?: () => void })
+      | null;
+    if (video?.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+      return;
+    }
+
+    const element = playerRef.current as
+      | (HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> | void })
+      | null;
+    if (element?.requestFullscreen) {
+      await element.requestFullscreen();
+      return;
+    }
+    element?.webkitRequestFullscreen?.();
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -161,15 +204,12 @@ export default function WatchPage() {
           setLastUpdated(new Date());
         }
       } catch {
-        if (isMounted) {
-          setLastUpdated(new Date());
-        }
+        if (isMounted) setLastUpdated(new Date());
       }
     };
 
     poll().catch(() => undefined);
     const interval = window.setInterval(poll, 2000);
-
     return () => {
       isMounted = false;
       window.clearInterval(interval);
@@ -185,7 +225,6 @@ export default function WatchPage() {
       });
       return;
     }
-
     disconnectViewer();
   }, [connectViewer, disconnectViewer, isLive]);
 
@@ -197,58 +236,73 @@ export default function WatchPage() {
             <p className="text-sm font-medium text-ready">Remotie</p>
             <h1 className="text-2xl font-semibold">Watch</h1>
           </div>
-          <span
-            className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
-              isLive ? "bg-live text-white" : "bg-white/10 text-white/72"
-            }`}
-          >
+          <span className={`rounded-full px-3 py-1.5 text-sm font-semibold ${isLive ? "bg-live text-white" : "bg-white/10 text-white/72"}`}>
             {isLive ? "LIVE" : "IDLE"}
           </span>
         </header>
 
         <section className="flex flex-1 flex-col justify-center py-8">
-          <div className="rounded-[2rem] border border-white/10 bg-panel p-5 shadow-soft">
-            <div className="relative aspect-video overflow-hidden rounded-3xl border border-white/10 bg-black">
-              <div ref={mediaRef} className="absolute inset-0" />
-              <div className="absolute inset-0 flex items-center justify-center p-5">
+          <div className="rounded-[2rem] border border-white/10 bg-panel p-4 shadow-soft">
+            <div ref={playerRef} className="relative aspect-video overflow-hidden rounded-3xl border border-white/10 bg-black">
+              <div
+                ref={mediaRef}
+                className="absolute inset-0 transition-transform duration-200"
+                style={{ transform: `scale(${zoomMode})`, transformOrigin: "center" }}
+              />
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-5">
                 {isLive ? (
                   remoteTrackCount === 0 ? (
                     <div>
                       <div className="flex items-center gap-2 text-live">
                         <span className="h-3 w-3 rounded-full bg-live" />
-                        <span className="text-sm font-bold">
-                          {liveKitState === "connecting" ? "Connecting" : "Live stream active"}
-                        </span>
+                        <span className="text-sm font-bold">{liveKitState === "connecting" ? "Connecting" : "Live stream active"}</span>
                       </div>
-                      <p className="mt-5 text-sm leading-6 text-white/62">
-                        LiveKit が未設定、または映像トラックを待機中です。
-                      </p>
+                      <p className="mt-5 text-sm leading-6 text-white/62">映像トラックを待機中です。</p>
                     </div>
                   ) : audioNeedsGesture ? (
-                    <button
-                      type="button"
-                      onClick={enableAudio}
-                      className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft"
-                    >
+                    <button type="button" onClick={enableAudio} className="pointer-events-auto rounded-full bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft">
                       音声を有効化
                     </button>
                   ) : null
                 ) : (
                   <div className="flex h-full flex-col justify-center">
                     <p className="text-3xl font-semibold">Waiting for stream...</p>
-                    <p className="mt-3 text-base leading-7 text-white/62">
-                      このページを開いたままにしてください。/go で START すると自動で切り替わります。
-                    </p>
+                    <p className="mt-3 text-base leading-7 text-white/62">このページを開いたままにしてください。/go で START すると自動で切り替わります。</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {connectionError ? (
-              <div className="mt-4 rounded-2xl border border-live/40 bg-live/10 p-3 text-sm text-white">
-                {connectionError}
-              </div>
-            ) : null}
+            <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+              {(["high", "medium", "low"] as QualityMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => changeQuality(mode)}
+                  className={`rounded-2xl px-3 py-3 font-semibold ${qualityMode === mode ? "bg-white text-ink" : "bg-white/[0.06] text-white/72"}`}
+                >
+                  {mode === "high" ? "High" : mode === "medium" ? "Mid" : "Low"}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-2 grid grid-cols-4 gap-2 text-sm">
+              {([1, 1.5, 2] as ZoomMode[]).map((zoom) => (
+                <button
+                  key={zoom}
+                  type="button"
+                  onClick={() => setZoomMode(zoom)}
+                  className={`rounded-2xl px-3 py-3 font-semibold ${zoomMode === zoom ? "bg-ready text-ink" : "bg-white/[0.06] text-white/72"}`}
+                >
+                  {zoom}x
+                </button>
+              ))}
+              <button type="button" onClick={requestFullscreen} className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82">
+                Full
+              </button>
+            </div>
+
+            {connectionError ? <div className="mt-4 rounded-2xl border border-live/40 bg-live/10 p-3 text-sm text-white">{connectionError}</div> : null}
 
             <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-2xl bg-white/[0.06] p-4">

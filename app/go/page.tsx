@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Room, Track } from "livekit-client";
+import { AudioPresets, Room, Track, VideoPresets } from "livekit-client";
 import type { StreamStatusResponse } from "@/lib/stream-types";
 
 type PermissionState = "checking" | "ready" | "required" | "error";
@@ -24,9 +24,9 @@ function buildMediaConstraints(facingMode: FacingMode, videoEnabled: boolean): M
     video: videoEnabled
       ? {
           facingMode: { ideal: facingMode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 15, max: 30 }
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30, max: 30 }
         }
       : false
   };
@@ -86,10 +86,7 @@ export default function GoPage() {
     stopMeter();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    if (videoRef.current) videoRef.current.srcObject = null;
   }, [stopMeter]);
 
   const stopLiveKitPublishing = useCallback(() => {
@@ -98,14 +95,17 @@ export default function GoPage() {
     setLiveKitState("mock");
   }, []);
 
-  const applyTrackState = useCallback((stream: MediaStream, nextMicEnabled = micEnabled) => {
-    stream.getAudioTracks().forEach((track) => {
-      track.enabled = nextMicEnabled;
-    });
-    stream.getVideoTracks().forEach((track) => {
-      track.enabled = cameraEnabled;
-    });
-  }, [cameraEnabled, micEnabled]);
+  const applyTrackState = useCallback(
+    (stream: MediaStream, nextMicEnabled = micEnabled) => {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = nextMicEnabled;
+      });
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = cameraEnabled;
+      });
+    },
+    [cameraEnabled, micEnabled]
+  );
 
   const startMeter = useCallback(
     (stream: MediaStream) => {
@@ -120,8 +120,7 @@ export default function GoPage() {
       const audioContext = new AudioContextClass();
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
+      audioContext.createMediaStreamSource(stream).connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
       audioContextRef.current = audioContext;
 
@@ -145,7 +144,7 @@ export default function GoPage() {
     async (nextFacingMode = facingMode, nextCameraEnabled = cameraEnabled) => {
       if (!navigator.mediaDevices?.getUserMedia) {
         setPermissionState("error");
-        setError("このブラウザではカメラまたはマイクを利用できません。Safariの最新版で開いてください。");
+        setError("このブラウザではカメラまたはマイクを利用できません。Safari の最新版で開いてください。");
         return null;
       }
 
@@ -193,10 +192,7 @@ export default function GoPage() {
 
       if (tokenResponse.enabled) {
         setLiveKitState("connecting");
-        const room = new Room({
-          adaptiveStream: true,
-          dynacast: true
-        });
+        const room = new Room({ adaptiveStream: true, dynacast: true });
         roomRef.current = room;
         await room.connect(tokenResponse.url, tokenResponse.token);
 
@@ -205,13 +201,19 @@ export default function GoPage() {
         if (audioTrack && micEnabled) {
           await room.localParticipant.publishTrack(audioTrack, {
             source: Track.Source.Microphone,
-            name: "remotie-microphone"
+            name: "remotie-microphone",
+            audioPreset: AudioPresets.speech,
+            dtx: true,
+            red: true
           });
         }
         if (videoTrack && cameraEnabled) {
           await room.localParticipant.publishTrack(videoTrack, {
             source: Track.Source.Camera,
-            name: "remotie-camera"
+            name: "remotie-camera",
+            videoEncoding: VideoPresets.h1080.encoding,
+            videoSimulcastLayers: [VideoPresets.h540, VideoPresets.h180],
+            simulcast: true
           });
         }
         setLiveKitState("connected");
@@ -250,9 +252,7 @@ export default function GoPage() {
   const switchCamera = useCallback(async () => {
     const nextFacingMode = facingMode === "environment" ? "user" : "environment";
     setFacingMode(nextFacingMode);
-    if (cameraEnabled) {
-      await requestMedia(nextFacingMode, true);
-    }
+    if (cameraEnabled) await requestMedia(nextFacingMode, true);
   }, [cameraEnabled, facingMode, requestMedia]);
 
   const toggleMic = useCallback(() => {
@@ -264,11 +264,8 @@ export default function GoPage() {
       track.enabled = nextMicEnabled;
     });
     roomRef.current?.localParticipant.setMicrophoneEnabled(nextMicEnabled).catch(() => undefined);
-    if (nextMicEnabled) {
-      startMeter(stream);
-    } else {
-      stopMeter();
-    }
+    if (nextMicEnabled) startMeter(stream);
+    else stopMeter();
   }, [micEnabled, startMeter, stopMeter]);
 
   const toggleCamera = useCallback(async () => {
@@ -279,14 +276,11 @@ export default function GoPage() {
       await requestMedia(facingMode, true);
       return;
     }
-
     streamRef.current?.getVideoTracks().forEach((track) => {
       track.enabled = false;
       track.stop();
     });
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    if (videoRef.current) videoRef.current.srcObject = null;
   }, [cameraEnabled, facingMode, requestMedia]);
 
   useEffect(() => {
@@ -302,8 +296,7 @@ export default function GoPage() {
 
   useEffect(() => {
     const stream = streamRef.current;
-    if (!stream) return;
-    applyTrackState(stream);
+    if (stream) applyTrackState(stream);
   }, [applyTrackState, micEnabled, cameraEnabled]);
 
   useEffect(() => {
@@ -319,24 +312,14 @@ export default function GoPage() {
             <p className="text-sm font-medium text-ready">Remotie</p>
             <h1 className="text-2xl font-semibold">Instant Listen</h1>
           </div>
-          <div
-            className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
-              isLive ? "bg-live text-white" : "bg-white/10 text-white/78"
-            }`}
-          >
+          <div className={`rounded-full px-3 py-1.5 text-sm font-semibold ${isLive ? "bg-live text-white" : "bg-white/10 text-white/78"}`}>
             {isLive ? `LIVE ${elapsed}` : "READY"}
           </div>
         </header>
 
         <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-soft">
           {cameraEnabled ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              muted
-              playsInline
-              className="aspect-[3/4] w-full object-cover"
-            />
+            <video ref={videoRef} autoPlay muted playsInline className="aspect-[3/4] w-full object-cover" />
           ) : (
             <div className="flex aspect-[3/4] w-full items-center justify-center bg-black">
               <div className="text-center">
@@ -366,38 +349,18 @@ export default function GoPage() {
             </span>
           </div>
           <div className="mt-3 h-4 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-ready transition-[width] duration-100"
-              style={{ width: `${micEnabled ? micLevel : 0}%` }}
-            />
+            <div className="h-full rounded-full bg-ready transition-[width] duration-100" style={{ width: `${micEnabled ? micLevel : 0}%` }} />
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={switchCamera}
-              disabled={!cameraEnabled || isBusy}
-              className="rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-45"
-            >
+            <button type="button" onClick={switchCamera} disabled={!cameraEnabled || isBusy} className="rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-45">
               <span>Camera</span>
-              <span className="mt-1 block font-semibold text-white">
-                {facingMode === "environment" ? "Back" : "Front"}
-              </span>
+              <span className="mt-1 block font-semibold text-white">{facingMode === "environment" ? "Back" : "Front"}</span>
             </button>
-            <button
-              type="button"
-              onClick={toggleCamera}
-              disabled={isBusy}
-              className="rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-45"
-            >
+            <button type="button" onClick={toggleCamera} disabled={isBusy} className="rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-45">
               <span>Video</span>
               <span className="mt-1 block font-semibold text-white">{cameraEnabled ? "On" : "Off"}</span>
             </button>
-            <button
-              type="button"
-              onClick={toggleMic}
-              disabled={isBusy || permissionState !== "ready"}
-              className="rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-45"
-            >
+            <button type="button" onClick={toggleMic} disabled={isBusy || permissionState !== "ready"} className="rounded-2xl bg-white/[0.06] p-3 text-left text-sm text-white/72 disabled:opacity-45">
               <span>Mic</span>
               <span className="mt-1 block font-semibold text-white">{micEnabled ? "On" : "Off"}</span>
             </button>
@@ -405,49 +368,25 @@ export default function GoPage() {
           <div className="mt-3 rounded-2xl bg-white/[0.06] p-3 text-sm text-white/72">
             Auto stop <span className="font-semibold text-white">{autoStopRemaining} min</span>
             <span className="ml-3 text-white/42">
-              {liveKitState === "connected"
-                ? "LiveKit connected"
-                : liveKitState === "connecting"
-                  ? "LiveKit connecting"
-                  : liveKitState === "error"
-                    ? "LiveKit error"
-                    : "Mock status"}
+              {liveKitState === "connected" ? "LiveKit connected" : liveKitState === "connecting" ? "LiveKit connecting" : liveKitState === "error" ? "LiveKit error" : "Mock status"}
             </span>
           </div>
         </section>
 
-        {error ? (
-          <section className="rounded-3xl border border-live/40 bg-live/10 p-4 text-sm leading-6 text-white">
-            {error}
-          </section>
-        ) : null}
+        {error ? <section className="rounded-3xl border border-live/40 bg-live/10 p-4 text-sm leading-6 text-white">{error}</section> : null}
 
         <div className="mt-auto grid gap-3">
           {isLive ? (
-            <button
-              type="button"
-              onClick={stopStream}
-              disabled={isBusy}
-              className="h-20 rounded-full bg-live text-2xl font-bold text-white shadow-soft disabled:opacity-60"
-            >
+            <button type="button" onClick={stopStream} disabled={isBusy} className="h-20 rounded-full bg-live text-2xl font-bold text-white shadow-soft disabled:opacity-60">
               STOP
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={startStream}
-              disabled={isBusy || permissionState === "checking"}
-              className="h-24 rounded-full bg-white text-3xl font-bold text-ink shadow-soft disabled:opacity-60"
-            >
+            <button type="button" onClick={startStream} disabled={isBusy || permissionState === "checking"} className="h-24 rounded-full bg-white text-3xl font-bold text-ink shadow-soft disabled:opacity-60">
               START
             </button>
           )}
           {permissionState !== "ready" ? (
-            <button
-              type="button"
-              onClick={() => requestMedia()}
-              className="rounded-full border border-white/14 px-5 py-4 text-base font-semibold text-white"
-            >
+            <button type="button" onClick={() => requestMedia()} className="rounded-full border border-white/14 px-5 py-4 text-base font-semibold text-white">
               プレビューを再試行
             </button>
           ) : null}
