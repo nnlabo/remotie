@@ -6,6 +6,11 @@ export function getRuntimeConfig() {
     streamStoreBackend: process.env.REMOTIE_STREAM_TABLE ? "dynamodb" : "memory",
     transcriptStoreBackend: process.env.REMOTIE_STREAM_TABLE ? "dynamodb" : "memory",
     transcriptProvider: process.env.REMOTIE_TRANSCRIPT_PROVIDER || "placeholder",
+    transcribeProviderConfigured: Boolean(
+      process.env.REMOTIE_TRANSCRIBE_LANGUAGE_CODE || process.env.REMOTIE_TRANSCRIBE_REGION
+    ),
+    summaryProviderConfigured: Boolean(process.env.REMOTIE_SUMMARY_MODEL_ID),
+    summaryModelConfigured: Boolean(process.env.REMOTIE_SUMMARY_MODEL_ID),
     streamTableConfigured: Boolean(process.env.REMOTIE_STREAM_TABLE),
     awsRegionConfigured: Boolean(
       process.env.REMOTIE_AWS_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION

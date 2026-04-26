@@ -521,7 +521,7 @@ export default function WatchPage() {
               <button
                 type="button"
                 onClick={() => postTranscriptAction("summary")}
-                disabled={transcriptBusy}
+                disabled={transcriptBusy || !transcript?.summaryProviderConfigured}
                 className="rounded-2xl bg-white/[0.06] px-3 py-3 font-semibold text-white/82 disabled:opacity-45"
               >
                 Summary
@@ -549,16 +549,25 @@ export default function WatchPage() {
                     </p>
                   </div>
                   <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/68">
-                    {transcript?.transcript.provider ?? "placeholder"}
+                    {transcript?.transcribeProviderConfigured ? "aws_transcribe" : "placeholder"}
                   </span>
                 </div>
                 <div className="mt-4 max-h-44 overflow-auto rounded-2xl bg-black/24 p-3 leading-6 text-white/72">
                   {transcript?.transcript.entries.length ? (
                     transcript.transcript.entries.map((entry) => <p key={entry.id}>{entry.text}</p>)
                   ) : (
-                    <p>AWS Transcribe 接続後、ここに必要時だけ文字起こしを表示します。現時点では録音も保存もしていません。</p>
+                    <p>
+                      {transcript?.transcribeProviderConfigured
+                        ? "Transcript を押すと、必要な時だけ文字起こしを開始する準備ができています。"
+                        : "AWS Transcribe の環境変数を設定すると、ここに必要時だけ文字起こしを表示します。現時点では録音も保存もしていません。"}
+                    </p>
                   )}
                 </div>
+                {!transcript?.summaryProviderConfigured ? (
+                  <p className="mt-3 text-xs leading-5 text-white/48">
+                    Summary は REMOTIE_SUMMARY_MODEL_ID を設定すると有効になります。
+                  </p>
+                ) : null}
                 {transcript?.transcript.summary ? (
                   <div className="mt-3 rounded-2xl border border-ready/25 bg-ready/10 p-3 leading-6 text-white">
                     {transcript.transcript.summary}

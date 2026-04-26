@@ -1,10 +1,14 @@
 import {
+  BedrockRuntimeClient,
+  InvokeModelCommand
+} from "@aws-sdk/client-bedrock-runtime";
+import {
   DynamoDBClient,
   GetItemCommand,
   PutItemCommand,
   type AttributeValue
 } from "@aws-sdk/client-dynamodb";
-import type { TranscriptState, TranscriptStatusResponse } from "./transcript-types";
+import type { TranscriptEntry, TranscriptState, TranscriptStatusResponse } from "./transcript-types";
 
 const TRANSCRIPT_PK = "transcript";
 
@@ -36,7 +40,29 @@ function getTableName() {
 
 function getDynamoClient() {
   return new DynamoDBClient({
-    region: process.env.REMOTIE_AWS_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION
+    region: getAwsRegion()
+  });
+}
+
+function getAwsRegion() {
+  return process.env.REMOTIE_AWS_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+}
+
+function getSummaryModelId() {
+  return process.env.REMOTIE_SUMMARY_MODEL_ID;
+}
+
+function isSummaryProviderConfigured() {
+  return Boolean(getSummaryModelId());
+}
+
+function isTranscribeProviderConfigured() {
+  return Boolean(process.env.REMOTIE_TRANSCRIBE_LANGUAGE_CODE || process.env.REMOTIE_TRANSCRIBE_REGION);
+}
+
+function getBedrockClient() {
+  return new BedrockRuntimeClient({
+    region: getAwsRegion()
   });
 }
 
@@ -119,8 +145,47 @@ async function writeTranscript(transcript: TranscriptState) {
 function toResponse(transcript: TranscriptState, now: Date): TranscriptStatusResponse {
   return {
     transcript,
+    summaryProviderConfigured: isSummaryProviderConfigured(),
+    transcribeProviderConfigured: isTranscribeProviderConfigured(),
     now: now.toISOString()
   };
+}
+
+async function summarizeWithBedrock(text: string) {
+  const modelId = getSummaryModelId();
+  if (!modelId) return null;
+
+  const prompt = [
+    "あなたは会議や現場確認の音声文字起こしを短く要約するアシスタントです。",
+    "重要な状況、決定事項、次に確認すべきことを日本語で簡潔にまとめてください。",
+    "",
+    "文字起こし:",
+    text
+  ].join("\n");
+
+  const body = {
+    anthropic_version: "bedrock-2023-05-31",
+    max_tokens: 700,
+    temperature: 0.2,
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: prompt }]
+      }
+    ]
+  };
+
+  const result = await getBedrockClient().send(
+    new InvokeModelCommand({
+      modelId,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify(body)
+    })
+  );
+  const decoded = new TextDecoder().decode(result.body);
+  const parsed = JSON.parse(decoded) as { content?: Array<{ text?: string }> };
+  return parsed.content?.map((item) => item.text).filter(Boolean).join("\n").trim() || null;
 }
 
 export async function getTranscriptStatus(now = new Date()): Promise<TranscriptStatusResponse> {
@@ -160,15 +225,39 @@ export async function stopTranscript(): Promise<TranscriptStatusResponse> {
 export async function summarizeTranscript(): Promise<TranscriptStatusResponse> {
   const now = new Date();
   const current = await readTranscript();
-  const summary =
-    current.entries.length > 0
-      ? current.entries.map((entry) => entry.text).join("\n")
-      : "まだ文字起こしはありません。AWS Transcribe 接続後、必要なときだけ要約を生成します。";
+  const transcriptText = current.entries.map((entry) => entry.text).join("\n").trim();
+  const bedrockSummary = transcriptText ? await summarizeWithBedrock(transcriptText) : null;
+  const summary = bedrockSummary ?? "まだ文字起こしはありません。AWS Transcribe 接続後、必要なときだけ要約を生成します。";
   const transcript: TranscriptState = {
     ...current,
     status: "summarized",
     summary,
     updatedAt: now.toISOString()
+  };
+
+  await writeTranscript(transcript);
+  return toResponse(transcript, now);
+}
+
+export async function appendTranscriptEntry(text: string): Promise<TranscriptStatusResponse> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return getTranscriptStatus();
+  }
+
+  const now = new Date();
+  const current = await readTranscript();
+  const entry: TranscriptEntry = {
+    id: crypto.randomUUID(),
+    text: trimmed,
+    createdAt: now.toISOString()
+  };
+  const transcript: TranscriptState = {
+    ...current,
+    status: current.status === "idle" ? "listening" : current.status,
+    updatedAt: now.toISOString(),
+    entries: [...current.entries, entry],
+    summary: undefined
   };
 
   await writeTranscript(transcript);

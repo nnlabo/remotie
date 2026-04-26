@@ -20,5 +20,7 @@ export type TranscriptState = {
 
 export type TranscriptStatusResponse = {
   transcript: TranscriptState;
+  summaryProviderConfigured: boolean;
+  transcribeProviderConfigured: boolean;
   now: string;
 };

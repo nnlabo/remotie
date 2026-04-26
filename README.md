@@ -77,6 +77,11 @@ Recommended Amplify settings:
 - Optional AWS-backed state:
   - `REMOTIE_STREAM_TABLE=<dynamodb-table-name>`
   - `REMOTIE_AWS_REGION=ap-northeast-1`
+- Optional on-demand transcript/summary scaffold:
+  - `REMOTIE_TRANSCRIPT_PROVIDER=placeholder`
+  - `REMOTIE_TRANSCRIBE_REGION=ap-northeast-1`
+  - `REMOTIE_TRANSCRIBE_LANGUAGE_CODE=ja-JP`
+  - `REMOTIE_SUMMARY_MODEL_ID=<bedrock-model-id>`
 
 After deployment, test:
 
@@ -111,10 +116,17 @@ After the stack is created, set `REMOTIE_STREAM_TABLE=remotie-stream-state` in A
       "Effect": "Allow",
       "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
       "Resource": "<StreamStateTableArn>"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["bedrock:InvokeModel"],
+      "Resource": "*"
     }
   ]
 }
 ```
+
+`bedrock:InvokeModel` is only required when `REMOTIE_SUMMARY_MODEL_ID` is set. For stricter production IAM, replace `"*"` with the specific foundation model ARN allowed for summaries.
 
 ### Fastest Next.js Smoke Test
 
@@ -133,6 +145,10 @@ REMOTIE_BASIC_USER=
 REMOTIE_BASIC_PASSWORD=
 REMOTIE_STREAM_TABLE=
 REMOTIE_AWS_REGION=ap-northeast-1
+REMOTIE_TRANSCRIPT_PROVIDER=placeholder
+REMOTIE_TRANSCRIBE_REGION=ap-northeast-1
+REMOTIE_TRANSCRIBE_LANGUAGE_CODE=ja-JP
+REMOTIE_SUMMARY_MODEL_ID=
 ```
 
 LiveKit variables are placeholders for a later WebRTC integration. Do not commit real secrets.
@@ -140,6 +156,26 @@ LiveKit variables are placeholders for a later WebRTC integration. Do not commit
 `REMOTIE_BASIC_USER` and `REMOTIE_BASIC_PASSWORD` enable a simple HTTP Basic Auth gate when both are set. Leave them empty for local development.
 
 `GET /api/system/status` reports whether Basic Auth and the stream store are configured without exposing secret values. If Basic Auth is active, this endpoint should also require authentication.
+
+## On-Demand Transcript and Summary
+
+The viewer has a scaffold for opt-in transcription:
+
+- `Transcript` requests transcription only while the user wants it.
+- `Stop Text` stops the transcript session state.
+- `Summary` is disabled until `REMOTIE_SUMMARY_MODEL_ID` is configured.
+- Transcript state is stored in the same DynamoDB table as `pk=transcript` when `REMOTIE_STREAM_TABLE` is set.
+- The app does not record audio or persist media files.
+
+Current API boundaries:
+
+- `POST /api/transcript/start`
+- `POST /api/transcript/stop`
+- `POST /api/transcript/append` with `{ "text": "..." }`
+- `POST /api/transcript/summary`
+- `GET /api/transcript/status`
+
+`/api/transcript/append` is the boundary intended for a future AWS Transcribe Streaming worker. The worker should only run after the user explicitly presses `Transcript`.
 
 ## LiveKit Setup
 
