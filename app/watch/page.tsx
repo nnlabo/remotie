@@ -35,6 +35,7 @@ export default function WatchPage() {
   const [liveKitState, setLiveKitState] = useState<LiveKitViewerState>("mock");
   const [connectionError, setConnectionError] = useState("");
   const [remoteTrackCount, setRemoteTrackCount] = useState(0);
+  const [audioNeedsGesture, setAudioNeedsGesture] = useState(false);
   const isLive = status?.isLive ?? false;
   const stateLabel = useMemo(() => {
     if (!status) return "確認中";
@@ -107,10 +108,14 @@ export default function WatchPage() {
         roomRef.current = null;
         setLiveKitState("mock");
         clearMedia();
+      })
+      .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        setAudioNeedsGesture(!room.canPlaybackAudio);
       });
 
     try {
       await room.connect(tokenResponse.url, tokenResponse.token);
+      setAudioNeedsGesture(!room.canPlaybackAudio);
       room.remoteParticipants.forEach((participant) => {
         participant.trackPublications.forEach((publication) => {
           if (publication.track) {
@@ -132,7 +137,17 @@ export default function WatchPage() {
     roomRef.current = null;
     clearMedia();
     setLiveKitState("mock");
+    setAudioNeedsGesture(false);
   }, [clearMedia]);
+
+  const enableAudio = useCallback(async () => {
+    try {
+      await roomRef.current?.startAudio();
+      setAudioNeedsGesture(false);
+    } catch (err) {
+      setConnectionError(err instanceof Error ? err.message : "音声を有効化できませんでした");
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -193,32 +208,40 @@ export default function WatchPage() {
 
         <section className="flex flex-1 flex-col justify-center py-8">
           <div className="rounded-[2rem] border border-white/10 bg-panel p-5 shadow-soft">
-            <div
-              ref={mediaRef}
-              className="flex aspect-video items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-black p-5"
-            >
-              {isLive ? (
-                remoteTrackCount === 0 ? (
-                  <div>
-                    <div className="flex items-center gap-2 text-live">
-                      <span className="h-3 w-3 rounded-full bg-live" />
-                      <span className="text-sm font-bold">
-                        {liveKitState === "connecting" ? "Connecting" : "Live stream active"}
-                      </span>
+            <div className="relative aspect-video overflow-hidden rounded-3xl border border-white/10 bg-black">
+              <div ref={mediaRef} className="absolute inset-0" />
+              <div className="absolute inset-0 flex items-center justify-center p-5">
+                {isLive ? (
+                  remoteTrackCount === 0 ? (
+                    <div>
+                      <div className="flex items-center gap-2 text-live">
+                        <span className="h-3 w-3 rounded-full bg-live" />
+                        <span className="text-sm font-bold">
+                          {liveKitState === "connecting" ? "Connecting" : "Live stream active"}
+                        </span>
+                      </div>
+                      <p className="mt-5 text-sm leading-6 text-white/62">
+                        LiveKit が未設定、または映像トラックを待機中です。
+                      </p>
                     </div>
-                    <p className="mt-5 text-sm leading-6 text-white/62">
-                      LiveKit が未設定、または映像トラックを待機中です。
+                  ) : audioNeedsGesture ? (
+                    <button
+                      type="button"
+                      onClick={enableAudio}
+                      className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-ink shadow-soft"
+                    >
+                      音声を有効化
+                    </button>
+                  ) : null
+                ) : (
+                  <div className="flex h-full flex-col justify-center">
+                    <p className="text-3xl font-semibold">Waiting for stream...</p>
+                    <p className="mt-3 text-base leading-7 text-white/62">
+                      このページを開いたままにしてください。/go で START すると自動で切り替わります。
                     </p>
                   </div>
-                ) : null
-              ) : (
-                <div className="flex h-full flex-col justify-center">
-                  <p className="text-3xl font-semibold">Waiting for stream...</p>
-                  <p className="mt-3 text-base leading-7 text-white/62">
-                    このページを開いたままにしてください。/go で START すると自動で切り替わります。
-                  </p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {connectionError ? (
