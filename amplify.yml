@@ -3,6 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
+        - env | grep -e NEXT_PUBLIC_ -e REMOTIE_ >> .env.production
         - npm ci
     build:
       commands:

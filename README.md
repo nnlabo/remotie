@@ -72,6 +72,8 @@ Recommended Amplify settings:
 - Optional access gate:
   - `REMOTIE_BASIC_USER=<your-user>`
   - `REMOTIE_BASIC_PASSWORD=<your-password>`
+- Optional AWS-backed state:
+  - `REMOTIE_STREAM_TABLE=<dynamodb-table-name>`
 
 After deployment, test:
 
@@ -79,6 +81,13 @@ After deployment, test:
 - Viewer: `https://<your-amplify-domain>/watch`
 
 Important: the current MVP stores stream state in memory. On serverless or multi-instance hosting, `/go` and `/watch` may not always share the same process. If status switching is inconsistent after deployment, replace `lib/stream-store.ts` with a durable shared store before deeper testing.
+
+For AWS-backed state, create a DynamoDB table with:
+
+- Table name: any name, for example `remotie-stream-state`
+- Partition key: `pk` (String)
+
+Then set `REMOTIE_STREAM_TABLE` to that table name and make sure the Amplify compute role can call `dynamodb:GetItem` and `dynamodb:PutItem` on the table.
 
 ### Fastest Next.js Smoke Test
 
@@ -95,11 +104,14 @@ LIVEKIT_API_KEY=
 LIVEKIT_API_SECRET=
 REMOTIE_BASIC_USER=
 REMOTIE_BASIC_PASSWORD=
+REMOTIE_STREAM_TABLE=
 ```
 
 LiveKit variables are placeholders for a later WebRTC integration. Do not commit real secrets.
 
 `REMOTIE_BASIC_USER` and `REMOTIE_BASIC_PASSWORD` enable a simple HTTP Basic Auth gate when both are set. Leave them empty for local development.
+
+`GET /api/system/status` reports whether Basic Auth and the stream store are configured without exposing secret values. If Basic Auth is active, this endpoint should also require authentication.
 
 ## Testing on iPhone
 
