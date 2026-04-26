@@ -69,6 +69,9 @@ Recommended Amplify settings:
 - Install command: `npm ci`
 - Output/artifact directory: `.next`
 - Environment variable: `NEXT_PUBLIC_APP_BASE_URL=https://<your-amplify-domain>`
+- Optional access gate:
+  - `REMOTIE_BASIC_USER=<your-user>`
+  - `REMOTIE_BASIC_PASSWORD=<your-password>`
 
 After deployment, test:
 
@@ -90,9 +93,13 @@ NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
 NEXT_PUBLIC_LIVEKIT_URL=
 LIVEKIT_API_KEY=
 LIVEKIT_API_SECRET=
+REMOTIE_BASIC_USER=
+REMOTIE_BASIC_PASSWORD=
 ```
 
 LiveKit variables are placeholders for a later WebRTC integration. Do not commit real secrets.
+
+`REMOTIE_BASIC_USER` and `REMOTIE_BASIC_PASSWORD` enable a simple HTTP Basic Auth gate when both are set. Leave them empty for local development.
 
 ## Testing on iPhone
 
