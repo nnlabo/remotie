@@ -1,140 +1,80 @@
 # Remotie
 
-Remotie is the initial MVP codebase for **Instant Listen**, an iPhone-first Next.js PWA. The goal is simple: open `/go`, grant camera and microphone access, press one large Start button, and let another device open `/watch` to see whether the local mock stream is live.
+## 日本語
 
-This first implementation intentionally does **not** include WebRTC, recording, YouTube, Google Meet, or hardcoded secrets.
+Remotie は、iPhone を「必要な瞬間だけ、すぐに置ける見守り・確認用カメラ」として使うための Next.js PWA です。
 
-## Current MVP Scope
+目的は、監視カメラや専用ハードウェアを増やすことではありません。会社支給の iPhone や手元のスマートフォンを使って、離席前、現場確認、受付まわり、作業場所の一時確認など、「今だけ見たい・聞きたい」場面を最短の手数でつなぐことを目指しています。
 
-- Next.js App Router with TypeScript
-- Tailwind CSS mobile-first UI
-- PWA manifest and service worker shell
-- `/go` sender page
-- `/watch` viewer page
-- Camera preview via `navigator.mediaDevices.getUserMedia()`
-- Microphone level meter via `AudioContext`
-- Local/mock stream state machine
-- API routes:
-  - `POST /api/stream/start`
-  - `POST /api/stream/stop`
-- `GET /api/stream/status`
-- `GET /api/token/sender`
-- `GET /api/token/viewer`
-- Auto-stop after 60 minutes
-- No recording
-- No public share flow
+開発で大事にしていることは、技術的に派手なことよりも、**必要な時に迷わず使えること**です。Remotie は録画や公開配信を前提にせず、送信側が明示的に Start を押した時だけライブ状態になります。
 
-## Local Setup
+### 主なユースケース
+
+- 離席中に、受付や部屋の様子を別端末から確認する
+- 会議室や作業場所の音声・映像を一時的に確認する
+- 現場に iPhone を置き、遠隔のPCやスマートフォンから状況を見る
+- 高価な専用カメラを設置する前に、運用が成立するか検証する
+- 必要な時だけ文字起こしや要約を使い、状況把握を短く済ませる
+
+### 現在できること
+
+- iPhone-first PWA
+- `/go` 送信側ページ
+- `/watch` 視聴側ページ
+- `/go` でカメラ/マイク権限を取得
+- カメラプレビュー
+- マイクレベルメーター
+- Start / Stop
+- LiveKit による音声・映像送受信
+- `/watch` の Waiting / Live 表示
+- 画質切り替え High / Mid / Low
+- 視聴側のピンチズームとドラッグ
+- 視聴側のフルスクリーン表示
+- 送信側の Screen Hide 時計画面
+- 60分自動停止
+- DynamoDB によるライブ状態共有
+- Basic Auth による簡易アクセスゲート
+- 必要時だけの Transcript / Summary UI
+- Bedrock Converse API による要約
+- `/go` と `/watch` の個別ホーム画面アイコン
+
+### やらないこと
+
+- 録画
+- YouTube Live 連携
+- Google Meet 自動化
+- 公開共有リンクの発行
+- 秘密情報のハードコード
+
+### ローカル開発
 
 ```bash
 npm install
 npm run dev
 ```
 
-If port 3000 is already in use, choose another port:
+ポート `3000` が使われている場合:
 
 ```bash
 npm run dev -- -p 3001
 ```
 
-Open:
+開くURL:
 
-- Sender: `http://localhost:3000/go` or your chosen port
-- Viewer: `http://localhost:3000/watch` or your chosen port
+- 送信側: `http://localhost:3000/go`
+- 視聴側: `http://localhost:3000/watch`
 
-For type checking:
+検証:
 
 ```bash
+npm run lint
 npm run typecheck
-```
-
-For production build:
-
-```bash
 npm run build
 ```
 
-## Internet Testing
+### 環境変数
 
-For iPhone testing, deploy to an HTTPS URL. Camera and microphone permissions are much easier to validate on a real public HTTPS origin than on a local network address.
-
-### AWS Amplify Hosting
-
-This repository includes `amplify.yml` for Amplify Hosting.
-
-Recommended Amplify settings:
-
-- Repository: `nnlabo/remotie`
-- Branch: `main`
-- Framework preset: Next.js
-- Build command: `npm run build`
-- Install command: `npm ci`
-- Output/artifact directory: `.next`
-- Environment variable: `NEXT_PUBLIC_APP_BASE_URL=https://<your-amplify-domain>`
-- Optional access gate:
-  - `REMOTIE_BASIC_USER=<your-user>`
-  - `REMOTIE_BASIC_PASSWORD=<your-password>`
-- Optional AWS-backed state:
-  - `REMOTIE_STREAM_TABLE=<dynamodb-table-name>`
-  - `REMOTIE_AWS_REGION=ap-northeast-1`
-- Optional on-demand transcript/summary scaffold:
-  - `REMOTIE_TRANSCRIPT_PROVIDER=placeholder`
-  - `REMOTIE_TRANSCRIBE_REGION=ap-northeast-1`
-  - `REMOTIE_TRANSCRIBE_LANGUAGE_CODE=ja-JP`
-  - `REMOTIE_SUMMARY_MODEL_ID=apac.amazon.nova-lite-v1:0`
-
-After deployment, test:
-
-- Sender: `https://<your-amplify-domain>/go`
-- Viewer: `https://<your-amplify-domain>/watch`
-
-Important: the current MVP stores stream state in memory. On serverless or multi-instance hosting, `/go` and `/watch` may not always share the same process. If status switching is inconsistent after deployment, replace `lib/stream-store.ts` with a durable shared store before deeper testing.
-
-For AWS-backed state, create a DynamoDB table with:
-
-- Table name: any name, for example `remotie-stream-state`
-- Partition key: `pk` (String)
-
-Then set `REMOTIE_STREAM_TABLE` to that table name and make sure the Amplify compute role can call `dynamodb:GetItem` and `dynamodb:PutItem` on the table.
-
-You can create the table from the included CloudFormation template:
-
-```bash
-aws cloudformation deploy \
-  --stack-name remotie-state \
-  --template-file infra/remotie-state.yaml \
-  --parameter-overrides TableName=remotie-stream-state
-```
-
-After the stack is created, set `REMOTIE_STREAM_TABLE=remotie-stream-state` in Amplify and attach this IAM policy to the Amplify compute role, replacing the table ARN:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
-      "Resource": "<StreamStateTableArn>"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["bedrock:InvokeModel"],
-      "Resource": "*"
-    }
-  ]
-}
-```
-
-`bedrock:InvokeModel` is only required when `REMOTIE_SUMMARY_MODEL_ID` is set. The app uses the Bedrock Converse API so it can work with Amazon Nova or Anthropic Claude model/profile IDs. For stricter production IAM, replace `"*"` with the specific foundation model or inference profile ARN allowed for summaries.
-
-### Fastest Next.js Smoke Test
-
-Vercel is also a good quick smoke-test target for a Next.js app because it auto-detects the framework from GitHub. The same in-memory state caveat applies there too.
-
-## Environment Variables
-
-Copy `.env.example` to `.env.local` when needed.
+`.env.example` を参考に `.env.local` を作成してください。実値の入った `.env*` は Git 管理しないでください。
 
 ```bash
 NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
@@ -151,96 +91,235 @@ REMOTIE_TRANSCRIBE_LANGUAGE_CODE=ja-JP
 REMOTIE_SUMMARY_MODEL_ID=apac.amazon.nova-lite-v1:0
 ```
 
-LiveKit variables are placeholders for a later WebRTC integration. Do not commit real secrets.
+### AWS Amplify Hosting
 
-`REMOTIE_BASIC_USER` and `REMOTIE_BASIC_PASSWORD` enable a simple HTTP Basic Auth gate when both are set. Leave them empty for local development.
+このリポジトリには `amplify.yml` が含まれています。
 
-`GET /api/system/status` reports whether Basic Auth and the stream store are configured without exposing secret values. If Basic Auth is active, this endpoint should also require authentication.
+推奨設定:
 
-## On-Demand Transcript and Summary
+- Repository: your fork / repository
+- Branch: `main`
+- Framework preset: Next.js
+- Install command: `npm ci`
+- Build command: `npm run build`
+- Output directory: `.next`
 
-The viewer has a scaffold for opt-in transcription:
+Amplify 側に設定する主な環境変数:
 
-- `Transcript` requests transcription only while the user wants it.
-- `Stop Text` stops the transcript session state.
-- `Summary` is disabled until `REMOTIE_SUMMARY_MODEL_ID` is configured.
-- `/go` currently includes a no-recording browser speech bridge. When supported by the sender browser, it sends final text snippets to `/api/transcript/append`.
-- Transcript state is stored in the same DynamoDB table as `pk=transcript` when `REMOTIE_STREAM_TABLE` is set.
-- The app does not record audio or persist media files.
-
-Current API boundaries:
-
-- `POST /api/transcript/start`
-- `POST /api/transcript/stop`
-- `POST /api/transcript/append` with `{ "text": "..." }`
-- `POST /api/transcript/summary`
-- `GET /api/transcript/status`
-
-`/api/transcript/append` is also the boundary intended for a future AWS Transcribe Streaming worker. The worker should only run after the user explicitly presses `Transcript`.
-
-The browser speech bridge is intentionally a temporary bridge: it keeps the no-recording behavior and lets the transcript/summary UI be tested early, but browser support and permission behavior vary on iOS. For production AWS transcription, replace this bridge with an AWS Transcribe Streaming path that does not store audio.
-
-## LiveKit Setup
-
-The app runs in mock status mode until all LiveKit variables are configured:
-
+- `NEXT_PUBLIC_APP_BASE_URL`
 - `NEXT_PUBLIC_LIVEKIT_URL`
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
+- `REMOTIE_BASIC_USER`
+- `REMOTIE_BASIC_PASSWORD`
+- `REMOTIE_STREAM_TABLE`
+- `REMOTIE_AWS_REGION`
+- `REMOTIE_SUMMARY_MODEL_ID`
 
-When configured:
+### DynamoDB 状態ストア
 
-- `/api/token/sender` issues a short-lived publisher token
-- `/api/token/viewer` issues a short-lived viewer token
-- `/go` connects to LiveKit and publishes camera/microphone tracks after Start
-- `/watch` connects when stream status is live and attaches subscribed remote tracks
+本番に近い環境では、メモリではなく DynamoDB を使って `/go` と `/watch` の状態を共有します。
 
-Room name is currently fixed to `remotie-main` for the MVP.
+```bash
+aws cloudformation deploy \
+  --stack-name remotie-state \
+  --template-file infra/remotie-state.yaml \
+  --parameter-overrides TableName=remotie-stream-state
+```
 
-## Testing on iPhone
+Amplify compute role には、少なくとも対象テーブルへの `dynamodb:GetItem` と `dynamodb:PutItem` を付与してください。
 
-1. Run the app on a machine reachable from the iPhone.
-2. Open the local network URL in Safari.
-3. Go to `/go`.
-4. Grant camera and microphone access.
-5. Confirm the preview appears and the mic meter reacts.
-6. Add to Home Screen from Safari if you want to test standalone PWA behavior.
-7. Keep the PWA in the foreground while testing.
+### Transcript / Summary
 
-Camera and microphone access require HTTPS in most deployed environments. `localhost` is treated specially by browsers, but a phone testing against another machine usually needs HTTPS or a trusted tunnel.
+文字起こしと要約は、常時処理ではなく opt-in です。
 
-### Home Screen Icons
+- `/watch` の `Transcript` で開始要求
+- `/go` が対応ブラウザなら音声認識を開始
+- 最終テキストだけを `/api/transcript/append` に送信
+- `/watch` の `Show Text` に表示
+- `/watch` の `Summary` で Bedrock に要約依頼
+
+現在のブラウザ音声認識ブリッジは暫定実装です。録音ファイルは保存しません。将来的には AWS Transcribe Streaming worker に置き換える想定です。
+
+### iPhone ホーム画面アイコン
+
+`/go` と `/watch` は別々の manifest と Apple touch icon を持っています。
+
+- `/go`: `Remotie Go`、赤い送信アイコン
+- `/watch`: `Remotie Watch`、緑の視聴アイコン
+
+iPhone では Safari でそれぞれのURLを直接開き、共有メニューから「ホーム画面に追加」してください。iOS では通常の favicon だけでなく、`apple-touch-icon` と manifest metadata が使われます。
+
+### iOS / PWA の制約
+
+- カメラ/マイク開始にはユーザー操作が必要な場合があります。
+- 画面ロック中やバックグラウンドでの配信継続は保証されません。
+- ホーム画面PWAとSafariタブで挙動が異なる場合があります。
+- iOS の自動再生・音声出力ポリシーは厳しめです。
+- ブラウザ音声認識は iOS / Safari / PWA 状態によって利用可否が変わります。
+
+### Public リポジトリ化のセキュリティメモ
+
+- 実値入りの `.env*` は `.gitignore` で除外しています。
+- `.env.example` にはプレースホルダーのみを置いています。
+- API key、secret、Basic Auth password は Amplify / AWS 側の環境変数で管理します。
+- `/api/system/status` は設定有無だけを返し、secret 値は返しません。
+- Public化前に GitHub secret scanning を有効にすることを推奨します。
+- すでにどこかへ表示・共有した可能性がある credential は、念のためローテーションしてください。
+
+## English
+
+Remotie is a Next.js PWA that turns an iPhone into a quick, temporary live presence device.
+
+The goal is not to add another permanent security camera or dedicated hardware box. The goal is to let a user place a company iPhone or nearby smartphone, tap Start, and quickly check the room, front desk, work area, or temporary situation from another device.
+
+The core product principle is simple: **when you need to step away, starting the stream should take seconds**. Remotie does not assume recording or public broadcasting. The sender must explicitly tap Start before a live session begins.
+
+### Use Cases
+
+- Check a front desk or room while stepping away
+- Temporarily observe a meeting room or work area
+- Place an iPhone on site and watch from a PC or another phone
+- Validate an operational workflow before installing dedicated camera hardware
+- Use transcript and summary only when needed for faster situational understanding
+
+### Current Features
+
+- iPhone-first PWA
+- `/go` sender page
+- `/watch` viewer page
+- Camera and microphone permission flow
+- Camera preview
+- Microphone level meter
+- Start / Stop controls
+- LiveKit audio/video publishing and viewing
+- Waiting / Live viewer states
+- Viewer quality controls: High / Mid / Low
+- Viewer pinch zoom and drag
+- Viewer fullscreen
+- Sender Screen Hide clock view
+- 60-minute auto-stop
+- DynamoDB-backed shared stream state
+- Basic Auth access gate
+- Opt-in Transcript / Summary UI
+- Bedrock Converse API summary support
+- Separate Home Screen icons for `/go` and `/watch`
+
+### Out of Scope
+
+- Recording
+- YouTube Live integration
+- Google Meet automation
+- Public share links
+- Hardcoded secrets
+
+### Local Development
+
+```bash
+npm install
+npm run dev
+```
+
+If port `3000` is already in use:
+
+```bash
+npm run dev -- -p 3001
+```
+
+Open:
+
+- Sender: `http://localhost:3000/go`
+- Viewer: `http://localhost:3000/watch`
+
+Checks:
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
+
+### Environment Variables
+
+Use `.env.example` as a template for `.env.local`. Do not commit real `.env*` files.
+
+```bash
+NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
+NEXT_PUBLIC_LIVEKIT_URL=
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+REMOTIE_BASIC_USER=
+REMOTIE_BASIC_PASSWORD=
+REMOTIE_STREAM_TABLE=
+REMOTIE_AWS_REGION=ap-northeast-1
+REMOTIE_TRANSCRIPT_PROVIDER=placeholder
+REMOTIE_TRANSCRIBE_REGION=ap-northeast-1
+REMOTIE_TRANSCRIBE_LANGUAGE_CODE=ja-JP
+REMOTIE_SUMMARY_MODEL_ID=apac.amazon.nova-lite-v1:0
+```
+
+### AWS Amplify Hosting
+
+This repository includes `amplify.yml`.
+
+Recommended settings:
+
+- Repository: your fork / repository
+- Branch: `main`
+- Framework preset: Next.js
+- Install command: `npm ci`
+- Build command: `npm run build`
+- Output directory: `.next`
+
+Set runtime secrets in Amplify environment variables, not in the repository.
+
+### DynamoDB State Store
+
+For production-like hosting, use DynamoDB rather than in-memory state so `/go` and `/watch` share the same live status.
+
+```bash
+aws cloudformation deploy \
+  --stack-name remotie-state \
+  --template-file infra/remotie-state.yaml \
+  --parameter-overrides TableName=remotie-stream-state
+```
+
+Grant the Amplify compute role `dynamodb:GetItem` and `dynamodb:PutItem` on the table.
+
+### Transcript / Summary
+
+Transcript and summary are opt-in:
+
+- `/watch` requests transcription with `Transcript`
+- `/go` starts browser speech recognition when supported
+- Final text snippets are sent to `/api/transcript/append`
+- `/watch` displays text through `Show Text`
+- `Summary` sends the text to Bedrock for summarization
+
+The current browser speech bridge is a temporary no-recording bridge. It does not persist audio files. A future AWS Transcribe Streaming worker can replace it while keeping the same API boundary.
+
+### iPhone Home Screen Icons
 
 `/go` and `/watch` have separate manifests and Apple touch icons:
 
-- `/go` uses `Remotie Go` with a red sender icon.
-- `/watch` uses `Remotie Watch` with a green viewer icon.
+- `/go`: `Remotie Go`, red sender icon
+- `/watch`: `Remotie Watch`, green viewer icon
 
-On iPhone, open each route directly in Safari and use Share -> Add to Home Screen. iOS uses `apple-touch-icon` and manifest metadata for this flow; it is not only the browser favicon.
+On iPhone, open each route directly in Safari and use Share -> Add to Home Screen. iOS uses `apple-touch-icon` and manifest metadata for this flow; it is not just the browser favicon.
 
-## iOS Limitations
+### iOS / PWA Limitations
 
-- iOS may require a user gesture before camera or microphone starts.
-- Background streaming should not be assumed to work.
-- Streaming may stop or become unreliable when the screen locks.
-- Home-screen PWA behavior can differ from Safari tabs.
-- Device camera labels may not be available until permission is granted.
-- Audio output and autoplay policies are stricter on iOS than desktop browsers.
+- Camera and microphone access may require a user gesture.
+- Background streaming and screen-lock streaming are not guaranteed.
+- Home Screen PWA behavior can differ from Safari tabs.
+- iOS autoplay and audio playback policies are strict.
+- Browser speech recognition support varies by iOS / Safari / PWA context.
 
-## Mock Stream State
+### Security Notes for Public Repositories
 
-The stream state is held in memory inside the Next.js server process. This is enough for local development, but it is not durable and may reset in serverless or multi-instance hosting.
-
-For Amplify or another production-style deployment, replace `lib/stream-store.ts` with a shared store such as DynamoDB, Supabase, Firebase, or Redis.
-
-## Future Roadmap
-
-- Real authentication and same-user access gate
-- Durable stream state storage
-- LiveKit sender/viewer token API routes
-- Real WebRTC publishing and viewing
-- Device pairing and QR code
-- Audio-only mode
-- Camera switch
-- Viewer count and connection quality
-- Dark screen mode while streaming
+- Real `.env*` files are ignored by Git.
+- `.env.example` contains placeholders only.
+- API keys, secrets, and Basic Auth passwords belong in Amplify / AWS environment variables.
+- `/api/system/status` reports configuration booleans only, never secret values.
+- Enable GitHub secret scanning before making the repository public.
+- Rotate any credential that may have been displayed, shared, or copied outside the intended secret store.
