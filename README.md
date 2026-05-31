@@ -10,13 +10,6 @@ iPhone を置いて、Start を押す。別の端末で `/watch` を開く。
 
 There are plenty of ways to stream video. Most of them ask for too much ceremony when all you need is a quick check.
 
-Remotie is for moments like:
-
-- leaving a front desk for a few minutes
-- checking a meeting room from another device
-- placing a phone at a work site during a short task
-- testing whether a simple remote-presence workflow is useful before buying hardware
-
 これは監視カメラを増やすためのものではありません。
 
 「今だけ見たい」「今だけ聞きたい」を、会社支給の iPhone や手元のスマートフォンで済ませるための道具です。
@@ -26,6 +19,46 @@ The product bias is deliberately plain:
 > Open. Tap Start. Keep it running only while it is useful. Stop.
 
 No recording. No public share links. No YouTube or Google Meet automation.
+
+## Use Cases
+
+Remotie is for small, practical moments where a full camera system or video meeting feels like overkill.
+
+### Step away from a front desk
+
+受付や窓口を数分だけ離れる時、iPhone をカウンターの内側に置いて `/go` を開きます。Start を押しておけば、奥のPCや自分のスマートフォンから `/watch` を開いて、人が来たか、呼びかけがあったか、周囲が慌ただしくなっていないかを確認できます。
+
+It is not meant to replace a real reception system. It is for those awkward five minutes where you just need eyes and ears nearby.
+
+### Check a room without walking back
+
+会議室、作業部屋、倉庫、バックヤードなどで「今どうなっているかだけ見たい」時に使います。送信側の iPhone を置いておけば、別の端末から映像を見て、必要なら音声も確認できます。
+
+For example: is the meeting still going, did someone arrive, is the room quiet enough, is the equipment still visible, did the delivery come in?
+
+### Temporary site presence
+
+短い作業のあいだだけ、現場に電話を置いておく使い方です。常設カメラを付けるほどではないけれど、離れた場所から少しだけ状況を見たい時に向いています。
+
+The sender can hide the preview with the clock-like Screen Hide mode, so the phone does not keep showing the camera view to people nearby.
+
+### Remote help without starting a meeting
+
+誰かに「ちょっとそこを見ていてほしい」と頼む場面でも、Google Meet や配信サービスを立ち上げるほどではないことがあります。Remotie はイベント名、招待リンク、共有設定を挟まず、固定の `/watch` を開くだけで確認できます。
+
+This is useful when the workflow matters more than the call itself.
+
+### Try the workflow before buying hardware
+
+専用カメラ、ネットワーク機器、録画システムを検討する前に、「そもそもこういう見方をすると業務が楽になるのか」を試せます。iPhone とブラウザだけで始められるので、運用の当たり外れを早く見られます。
+
+If the habit sticks, dedicated hardware may make sense later. If it does not, nothing large was installed.
+
+### Quick transcript and summary when the audio matters
+
+映像を見るだけでなく、音声の内容を少し拾いたい時があります。Remotie の Transcript / Summary は常時記録ではなく、必要な時だけ押す前提です。
+
+The idea is not to archive everything. It is to answer simple questions like: what was said, what changed, and what should I check next?
 
 ## Current State
 
